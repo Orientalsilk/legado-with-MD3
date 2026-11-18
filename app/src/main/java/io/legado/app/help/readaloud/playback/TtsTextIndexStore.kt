@@ -3,6 +3,10 @@ package io.legado.app.help.readaloud.playback
 import com.google.gson.GsonBuilder
 import com.google.gson.reflect.TypeToken
 import java.io.File
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 
 /**
  * 朗读缓存的「文件名 → 正文摘录」索引。
@@ -81,13 +85,19 @@ internal object TtsTextIndexStore {
     private fun write(file: File, index: LinkedHashMap<String, String>) {
         val parent = file.parentFile
         parent?.mkdirs()
-        val tmp = File(parent, "${file.name}.tmp")
-        tmp.writeText(json.toJson(index, mapType))
-        if (!tmp.renameTo(file)) {
-            file.writeText(tmp.readText())
+        val tmp = File.createTempFile("${file.name}-", ".tmp", parent)
+        try {
+            tmp.writeText(json.toJson(index, mapType))
+            try {
+                Files.move(tmp.toPath(), file.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+            } catch (_: AtomicMoveNotSupportedException) {
+                // 不支持原子移动的文件系统仍通过同目录 rename 替换，绝不直接截断旧索引。
+                Files.move(tmp.toPath(), file.toPath(), REPLACE_EXISTING)
+            }
+            cached = index
+            cachedPath = file.absolutePath
+        } finally {
             tmp.delete()
         }
-        cached = index
-        cachedPath = file.absolutePath
     }
 }
