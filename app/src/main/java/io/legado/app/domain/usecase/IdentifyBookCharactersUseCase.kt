@@ -238,8 +238,6 @@ class IdentifyBookCharactersUseCase(
                 claimedByOthers = claimedByOthers,
             )
 
-            val aiOwnsProfileText = existing == null ||
-                existing.source == BookCharacterProfile.SOURCE_AI
             val next = BookCharacterProfile(
                 id = existing?.id ?: Uuid.random().toString(),
                 bookUrl = bookUrl,
@@ -251,8 +249,9 @@ class IdentifyBookCharactersUseCase(
                 // AI discovery never assigns a voice or overwrites an existing mapping.
                 voiceGender = existing?.voiceGender ?: BookCharacterProfile.VOICE_GENDER_UNKNOWN,
                 voiceAgeBand = existing?.voiceAgeBand ?: BookCharacterProfile.VOICE_AGE_UNKNOWN,
-                personality = if (aiOwnsProfileText) candidate.personality.ifBlank { existing?.personality.orEmpty() } else existing?.personality.orEmpty(),
-                summary = if (aiOwnsProfileText) candidate.summary.ifBlank { existing?.summary.orEmpty() } else existing?.summary.orEmpty(),
+                // Without the ownership ledger, never overwrite text a user may have edited.
+                personality = existing?.personality?.takeIf(String::isNotBlank) ?: candidate.personality,
+                summary = existing?.summary?.takeIf(String::isNotBlank) ?: candidate.summary,
                 status = existing?.status ?: BookCharacterProfile.STATUS_ACTIVE,
                 source = existing?.source ?: BookCharacterProfile.SOURCE_AI,
                 confidence = maxOf(existing?.confidence ?: 0f, candidate.confidence),
