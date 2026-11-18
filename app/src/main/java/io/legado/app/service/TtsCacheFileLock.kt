@@ -12,7 +12,7 @@ import kotlinx.coroutines.sync.withLock
  * the user cleared the cache from recreating the deleted file afterward.
  */
 internal object TtsCacheFileLock {
-    private class FileGenerationState(
+    internal class FileGenerationState(
         var generation: Long = 0L,
         var users: Int = 0,
     )
@@ -21,7 +21,7 @@ internal object TtsCacheFileLock {
         val path: String,
         val globalGeneration: Long,
         val fileGeneration: Long,
-        internal val state: Any,
+        internal val state: FileGenerationState,
     )
 
     private val locks = KeyedMutex()
@@ -58,7 +58,7 @@ internal object TtsCacheFileLock {
             return locks.withLock(path) { block(token) }
         } finally {
             synchronized(generationMonitor) {
-                val state = token.state as FileGenerationState
+                val state = token.state
                 state.users--
                 if (state.users == 0 && fileGenerations[path] === state) {
                     fileGenerations.remove(path)
@@ -78,7 +78,7 @@ internal object TtsCacheFileLock {
     }
 
     fun isCurrent(token: Token): Boolean = synchronized(generationMonitor) {
-        val state = token.state as FileGenerationState
+        val state = token.state
         token.globalGeneration == globalGeneration &&
             fileGenerations[token.path] === state &&
             token.fileGeneration == state.generation
