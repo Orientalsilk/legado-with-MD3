@@ -232,26 +232,12 @@ class IdentifyBookCharactersUseCase(
                 claimedByOthers = claimedByOthers,
             )
 
-            val next = BookCharacterProfile(
-                id = existing?.id ?: Uuid.random().toString(),
+            val next = mergeCharacterProfile(
+                existing = existing,
                 bookUrl = bookUrl,
-                name = canonicalName,
-                aliasesJson = GSON.toJson(mergedAliases),
-                avatarUri = existing?.avatarUri,
-                tagsJson = existing?.tagsJson ?: "[]",
-                role = existing?.role.orEmpty(),
-                // AI discovery never assigns a voice or overwrites an existing mapping.
-                voiceGender = existing?.voiceGender ?: BookCharacterProfile.VOICE_GENDER_UNKNOWN,
-                voiceAgeBand = existing?.voiceAgeBand ?: BookCharacterProfile.VOICE_AGE_UNKNOWN,
-                // Without the ownership ledger, never overwrite text a user may have edited.
-                personality = existing?.personality?.takeIf(String::isNotBlank) ?: candidate.personality,
-                summary = existing?.summary?.takeIf(String::isNotBlank) ?: candidate.summary,
-                status = existing?.status ?: BookCharacterProfile.STATUS_ACTIVE,
-                source = existing?.source ?: BookCharacterProfile.SOURCE_AI,
-                confidence = maxOf(existing?.confidence ?: 0f, candidate.confidence),
-                schemaVersion = existing?.schemaVersion ?: 1,
-                createdAt = existing?.createdAt ?: System.currentTimeMillis(),
-                updatedAt = System.currentTimeMillis(),
+                canonicalName = canonicalName,
+                aliases = mergedAliases,
+                candidate = candidate,
             )
             bookKnowledgeGateway.upsertCharacterProfile(next)
             if (existing == null) profiles += next
@@ -290,6 +276,39 @@ internal fun findUniqueCharacterProfile(
             .any { normalizeCharacterIdentityKey(it) == key }
     }
     return aliases.singleOrNull()
+}
+
+/**
+ * Merge analysis into an existing identity without ever changing its voice mapping or
+ * replacing non-empty profile text that may have been edited by the user.
+ */
+internal fun mergeCharacterProfile(
+    existing: BookCharacterProfile?,
+    bookUrl: String,
+    canonicalName: String,
+    aliases: List<String>,
+    candidate: IdentifyBookCharactersUseCase.Candidate,
+): BookCharacterProfile {
+    val now = System.currentTimeMillis()
+    return BookCharacterProfile(
+        id = existing?.id ?: Uuid.random().toString(),
+        bookUrl = bookUrl,
+        name = canonicalName,
+        aliasesJson = GSON.toJson(aliases),
+        avatarUri = existing?.avatarUri,
+        tagsJson = existing?.tagsJson ?: "[]",
+        role = existing?.role.orEmpty(),
+        voiceGender = existing?.voiceGender ?: BookCharacterProfile.VOICE_GENDER_UNKNOWN,
+        voiceAgeBand = existing?.voiceAgeBand ?: BookCharacterProfile.VOICE_AGE_UNKNOWN,
+        personality = existing?.personality?.takeIf(String::isNotBlank) ?: candidate.personality,
+        summary = existing?.summary?.takeIf(String::isNotBlank) ?: candidate.summary,
+        status = existing?.status ?: BookCharacterProfile.STATUS_ACTIVE,
+        source = existing?.source ?: BookCharacterProfile.SOURCE_AI,
+        confidence = maxOf(existing?.confidence ?: 0f, candidate.confidence),
+        schemaVersion = existing?.schemaVersion ?: 1,
+        createdAt = existing?.createdAt ?: now,
+        updatedAt = now,
+    )
 }
 
 /** Normalize harmless typography differences without collapsing genuinely different names. */
