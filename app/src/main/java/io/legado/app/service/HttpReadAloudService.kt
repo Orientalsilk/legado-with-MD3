@@ -759,15 +759,16 @@ class HttpReadAloudService : BaseReadAloudService(),
             exoPlayer.mediaItemCount == 0
         }
         if (canBurnCache) TtsCacheFileLock.invalidate(cacheFile)
-        val downloadedFile = TtsCacheFileLock.withLock(cacheFile) {
-            val saved = ReadAloudAudioStore.saveFrom(bookUrl, fileName, cacheFile)
-            if (saved != null && canBurnCache) {
+        val saved = TtsCacheFileLock.withLock(cacheFile) {
+            val copied = ReadAloudAudioStore.saveFrom(bookUrl, fileName, cacheFile)
+            if (copied != null && canBurnCache) {
                 cacheFile.delete()
                 File("${cacheFile.absolutePath}.part").delete()
                 removeTextIndexEntry(fileName)
             }
-            saved
-        } ?: run {
+            copied
+        }
+        if (saved == null) {
             // 合成说成功、缓存里却没有可复制的完整文件（被清/被并发删掉）：
             // 这一句同样没进下载区，计数要跟上，否则界面上是「少了句但 0 失败」
             audioDownloadFailed.incrementAndGet()
@@ -2275,11 +2276,13 @@ class HttpReadAloudService : BaseReadAloudService(),
                 it.storedOffset(positionMs, durationMs)
             } else null
         }
+        // 固定本次错误所属的播放代次，延迟淘汰完成时不能影响用户已切换的新章节。
+        val generation = playbackGeneration
         // 先完成淘汰再触发重合成，否则重试任务可能在旧文件删除前抢到同名缓存。
         lifecycleScope.launch(IO) {
             deleteCachedSpeakFile(mediaItem)
             withContext(Main) {
-                failSynthesis(playbackGeneration, error, retryOffset)
+                failSynthesis(generation, error, retryOffset)
             }
         }
     }
@@ -2288,7 +2291,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         val uri = mediaItem.localConfiguration?.uri ?: return
         if (uri.scheme != "file") return
         val filePath = uri.path ?: return
-        runCatching {
+        try {
             val file = File(filePath).canonicalFile
             // 通用播放错误只淘汰临时合成缓存，下载区文件继续按下载记录管理。
             if (file.parentFile == File(ttsFolderPath).canonicalFile && file.isFile) {
@@ -2299,6 +2302,9 @@ class HttpReadAloudService : BaseReadAloudService(),
                     removeTextIndexEntry(file.nameWithoutExtension)
                 }
             }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
         }
     }
 
