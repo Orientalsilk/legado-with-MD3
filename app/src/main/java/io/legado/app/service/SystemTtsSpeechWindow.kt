@@ -9,7 +9,7 @@ import kotlin.math.abs
  * 因此只允许一个未完成 utterance，等当前回调后再以 QUEUE_ADD 提交下一句，
  * 避免预取窗口把「合成完成」误当成「播放完成」并提前推进多句。
  */
-internal const val SPEECH_WINDOW_DEPTH = 1
+internal const val SPEECH_WINDOW_DEPTH = 3
 
 /** 语速/音高由 Float 运算得出，相等比较必须留余量。 */
 private const val SPEECH_STATE_EPSILON = 0.001f
