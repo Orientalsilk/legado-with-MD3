@@ -1,15 +1,7 @@
 name: Verify
 
 on:
-  push:
-    branches:
-      - main
-      - master
-    paths-ignore:
-      - '**/modules/web/**'
-  pull_request:
-    paths-ignore:
-      - '**/modules/web/**'
+  # 自用 fork：改为仅手动触发（Actions → Verify → Run workflow），避免每次推送都跑约 40 分钟
   workflow_dispatch:
 
 permissions:
