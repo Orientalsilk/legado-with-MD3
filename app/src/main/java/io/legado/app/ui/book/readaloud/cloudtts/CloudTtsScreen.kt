@@ -942,7 +942,7 @@ private fun CloudTtsEngineEditorContent(
                             }
                         }
                         val prefix = "data:$mimeType;base64,"
-                        val maxDataUrlLength = 10 * 1024 * 1024
+                        val maxDataUrlLength = MAX_STORED_REFERENCE_AUDIO_DATA_URL_LENGTH
                         val maxRawBytes = ((maxDataUrlLength - prefix.length) / 4) * 3
                         val output = ByteArrayOutputStream()
                         val input = context.contentResolver.openInputStream(uri)
@@ -955,7 +955,7 @@ private fun CloudTtsEngineEditorContent(
                                 if (count < 0) break
                                 total += count
                                 require(total <= maxRawBytes) {
-                                    "参考音频编码后可能超过 MiMo 的 10 MB 限制，请选择更短或更小的音频"
+                                    "参考音频过大（本机最多保存约 1.5 MB），请选择更短的音频，建议 10～30 秒"
                                 }
                                 output.write(buffer, 0, count)
                             }
@@ -964,10 +964,10 @@ private fun CloudTtsEngineEditorContent(
                         mimeType to Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
                     }
                     val prefix = "data:$mimeType;base64,"
-                    val maxDataUrlLength = 10 * 1024 * 1024
+                    val maxDataUrlLength = MAX_STORED_REFERENCE_AUDIO_DATA_URL_LENGTH
                     val dataUrl = prefix + encoded
                     require(dataUrl.length <= maxDataUrlLength) {
-                        "参考音频编码后超过 MiMo 的 10 MB 限制，请选择更短或更小的音频"
+                        "参考音频过大（本机最多保存约 1.5 MB），请选择更短的音频，建议 10～30 秒"
                     }
                     val options = runCatching {
                         JSONObject(editor.optionsJson)
@@ -1556,3 +1556,10 @@ private fun VoicePreviewTextDialog(
         onDismiss = onDismiss,
     )
 }
+
+/**
+ * 参考音频以 Base64 存在引擎配置的一行里。Android 的 CursorWindow 每行约 2 MB 上限，
+ * 超过后读取整张引擎表都会抛 SQLiteBlobTooBigException（引擎列表、合成、删除全部失效），
+ * 所以本机保存上限远低于 MiMo 自身的 10 MB。
+ */
+private const val MAX_STORED_REFERENCE_AUDIO_DATA_URL_LENGTH = 1_500_000
