@@ -888,12 +888,10 @@ class HttpReadAloudService : BaseReadAloudService(),
      * 而一次合成要几秒、期间 `.part` 和正式文件都还没落盘，另一条路径查缓存必然查不到、
      * 跟着重复请求。上锁排队 + 拿到锁后再查一次缓存，把重复请求压成一次。
      */
-    private val speakFileLocks = KeyedMutex()
-
     private suspend fun <T> withSpeakFileLock(
         fileName: String,
         block: suspend () -> T,
-    ): T = speakFileLocks.withLock(fileName, block)
+    ): T = TtsCacheFileLock.withLock(getSpeakFileAsMd5(fileName), block)
 
     private fun downloadAndPlayAudios() {
         exoPlayer.clearMediaItems()
