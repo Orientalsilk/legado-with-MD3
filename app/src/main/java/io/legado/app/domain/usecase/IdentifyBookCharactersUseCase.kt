@@ -197,19 +197,19 @@ class IdentifyBookCharactersUseCase(
                 .map(String::trim)
                 .filter(String::isNotBlank)
             val candidateKeys = (candidateAliases + candidateName)
-                .map(::normalizeIdentityKey)
+                .map(::normalizeCharacterIdentityKey)
                 .filter(String::isNotBlank)
                 .toSet()
 
             val exactMatches = profiles.filter {
                 it.status != BookCharacterProfile.STATUS_DELETED &&
-                    normalizeIdentityKey(it.name) == normalizeIdentityKey(candidateName)
+                    normalizeCharacterIdentityKey(it.name) == normalizeCharacterIdentityKey(candidateName)
             }
             val aliasMatches = if (exactMatches.isNotEmpty()) emptyList() else profiles.filter { profile ->
                 profile.status != BookCharacterProfile.STATUS_DELETED &&
-                    (profile.name.let(::normalizeIdentityKey) in candidateKeys ||
+                    (profile.name.let(::normalizeCharacterIdentityKey) in candidateKeys ||
                         GSON.fromJsonArray<String>(profile.aliasesJson).getOrNull().orEmpty()
-                            .map(::normalizeIdentityKey).any { it in candidateKeys })
+                            .map(::normalizeCharacterIdentityKey).any { it in candidateKeys })
             }
             val matches = if (exactMatches.isNotEmpty()) exactMatches else aliasMatches
             // Never merge two existing identities based on a shared nickname.
@@ -220,26 +220,24 @@ class IdentifyBookCharactersUseCase(
 
             val canonicalName = existing?.name ?: candidateName
             // Do not steal another character's canonical name or alias just because the
-            // model listed it as a nickname. Existing user-entered aliases are retained;
-            // only newly proposed aliases are filtered against other profiles.
+            // model listed it as a nickname. Existing user-entered aliases are retained.
             val claimedByOthers = profiles.asSequence()
                 .filter { it.id != existing?.id && it.status != BookCharacterProfile.STATUS_DELETED }
                 .flatMap { profile ->
                     sequenceOf(profile.name) +
                         GSON.fromJsonArray<String>(profile.aliasesJson).getOrNull().orEmpty().asSequence()
                 }
-                .map(::normalizeIdentityKey)
+                .map(::normalizeCharacterIdentityKey)
                 .filter(String::isNotBlank)
                 .toSet()
-            val safeCandidateAliases = (candidateAliases + listOf(candidateName).filter { it != canonicalName })
-                .filter { normalizeIdentityKey(it) !in claimedByOthers }
-            val mergedAliases = (
-                GSON.fromJsonArray<String>(existing?.aliasesJson.orEmpty()).getOrNull().orEmpty() +
-                    safeCandidateAliases
-                )
-                .map(String::trim)
-                .filter { it.isNotBlank() && normalizeIdentityKey(it) != normalizeIdentityKey(canonicalName) }
-                .distinctBy(::normalizeIdentityKey)
+            val mergedAliases = mergeCharacterAliases(
+                canonicalName = canonicalName,
+                existingAliases = GSON.fromJsonArray<String>(existing?.aliasesJson.orEmpty())
+                    .getOrNull().orEmpty(),
+                candidateAliases = candidateAliases,
+                candidateName = candidateName,
+                claimedByOthers = claimedByOthers,
+            )
 
             val next = BookCharacterProfile(
                 id = existing?.id ?: Uuid.random().toString(),
@@ -267,9 +265,6 @@ class IdentifyBookCharactersUseCase(
         }
     }
 
-    private fun normalizeIdentityKey(value: String): String =
-        value.trim().lowercase().filterNot { it.isWhitespace() || it in "·•・_—-（）()【】[]「」『』" }
-
     companion object {
         private const val MIN_CONFIDENCE = 0.65f
 
@@ -280,4 +275,33 @@ class IdentifyBookCharactersUseCase(
         fun defaultPrompt(): String =
             "You identify stable fictional characters from downloaded local chapters. Use read-only tools to list and read cached chapters and inspect existing characters. Return JSON only: {\"characters\":[{\"name\":string,\"aliases\":[string],\"role\":\"male_lead|female_lead|male_supporting|female_supporting|\",\"personality\":string,\"summary\":string,\"evidence\":string,\"confidence\":number}]}. Describe only facts supported by the text. Do not infer voice gender, voice age, voice pool, voice identity, or assign any TTS voice. Do not include pronouns, generic titles, or one-off passers-by. Do not create duplicates of existing names or aliases."
     }
+}
+
+/** Normalize harmless typography differences without collapsing genuinely different names. */
+internal fun normalizeCharacterIdentityKey(value: String): String =
+    value.trim().lowercase().filterNot {
+        it.isWhitespace() || it in "·•・_—-（）()【】[]「」『』"
+    }
+
+/**
+ * Keep stored aliases, add only unclaimed AI suggestions, and never repeat the canonical name.
+ * [claimedByOthers] contains normalized names and aliases belonging to other profiles.
+ */
+internal fun mergeCharacterAliases(
+    canonicalName: String,
+    existingAliases: List<String>,
+    candidateAliases: List<String>,
+    candidateName: String,
+    claimedByOthers: Set<String>,
+): List<String> {
+    val proposed = candidateAliases + listOf(candidateName).filter { it != canonicalName }
+    return (existingAliases + proposed.filter {
+        normalizeCharacterIdentityKey(it) !in claimedByOthers
+    })
+        .map(String::trim)
+        .filter {
+            it.isNotBlank() &&
+                normalizeCharacterIdentityKey(it) != normalizeCharacterIdentityKey(canonicalName)
+        }
+        .distinctBy(::normalizeCharacterIdentityKey)
 }
