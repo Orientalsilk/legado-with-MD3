@@ -16,23 +16,14 @@ permissions:
   contents: read
 
 jobs:
-  # 按变体分组：core / comic 各跑一个 runner，避免同一 runner 上两个变体的 Kotlin 编译
-  # 互相争内存（OutOfMemoryError: Java heap space）。
+  # 个人日常使用只维护 Core 基础版。
   verify:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - product: Core
-            label: core
-          - product: Comic
-            label: comic
-    name: Verify (${{ matrix.label }})
+    name: Verify (core)
     runs-on: ubuntu-latest
-    # concurrency 放在 job 层：workflow 层的 concurrency 不保证能解析 matrix 上下文。
     concurrency:
-      group: verify-${{ github.workflow }}-${{ github.ref }}-${{ matrix.product }}
+      group: verify-${{ github.workflow }}-${{ github.ref }}-core
       cancel-in-progress: true
+
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -62,28 +53,14 @@ jobs:
       # 架构检查只跑一次，挂在 core job 上。
       # 依赖解析命中 Maven Central 限流（HTTP 429）时自动重试一次；真实编译/测试失败不重试。
       - name: Run semantic compatibility, unit tests, lint, architecture check, and debug build
-        if: ${{ matrix.product == 'Core' }}
         run: |
           chmod +x gradlew
           bash scripts/run-gradle-with-retry.sh ./gradlew \
-            testApp${{ matrix.product }}DebugUnitTest \
-            lintApp${{ matrix.product }}Debug \
+            testAppCoreDebugUnitTest \
+            lintAppCoreDebug \
             verifyConfigArchitecture \
-            assembleApp${{ matrix.product }}Debug \
-            compileApp${{ matrix.product }}DebugAndroidTestKotlin \
-            --continue \
-            --no-daemon \
-            --no-configuration-cache
-
-      - name: Run unit tests, lint and debug build
-        if: ${{ matrix.product == 'Comic' }}
-        run: |
-          chmod +x gradlew
-          bash scripts/run-gradle-with-retry.sh ./gradlew \
-            testApp${{ matrix.product }}DebugUnitTest \
-            lintApp${{ matrix.product }}Debug \
-            assembleApp${{ matrix.product }}Debug \
-            compileApp${{ matrix.product }}DebugAndroidTestKotlin \
+            assembleAppCoreDebug \
+            compileAppCoreDebugAndroidTestKotlin \
             --continue \
             --no-daemon \
             --no-configuration-cache
@@ -92,20 +69,20 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: verify-unit-test-reports-${{ matrix.label }}
+          name: verify-unit-test-reports-core
           if-no-files-found: warn
           path: |
-            app/build/test-results/testApp${{ matrix.product }}DebugUnitTest/**
-            app/build/reports/tests/testApp${{ matrix.product }}DebugUnitTest/**
+            app/build/test-results/testAppCoreDebugUnitTest/**
+            app/build/reports/tests/testAppCoreDebugUnitTest/**
 
       - name: Upload lint reports
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: verify-lint-reports-${{ matrix.label }}
+          name: verify-lint-reports-core
           if-no-files-found: warn
           path: |
-            app/build/reports/lint-results-app${{ matrix.product }}Debug.html
-            app/build/reports/lint-results-app${{ matrix.product }}Debug.xml
-            app/build/reports/lint-results-app${{ matrix.product }}Debug.txt
-            app/build/reports/lint-results-app${{ matrix.product }}Debug.sarif
+            app/build/reports/lint-results-appCoreDebug.html
+            app/build/reports/lint-results-appCoreDebug.xml
+            app/build/reports/lint-results-appCoreDebug.txt
+            app/build/reports/lint-results-appCoreDebug.sarif
