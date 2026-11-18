@@ -48,10 +48,16 @@ internal object TtsCacheFileLock {
         block: suspend (Token) -> T,
     ): T {
         val path = file.absoluteFile.path
-        val token = synchronized(generationMonitor) {
-            val state = fileGenerations.getOrPut(path) { FileGenerationState() }
-            state.users++
-            Token(path, globalGeneration, state.generation, state)
+        // Register synthesis only after cache-wide maintenance has finished. The gate is
+        // released before waiting for the per-file mutex, so unrelated files still synthesize
+        // concurrently. A clear/sweep can invalidate every already-registered waiter, then
+        // safely finish before any newly-started synthesis is admitted.
+        val token = maintenanceLock.withLock {
+            synchronized(generationMonitor) {
+                val state = fileGenerations.getOrPut(path) { FileGenerationState() }
+                state.users++
+                Token(path, globalGeneration, state.generation, state)
+            }
         }
 
         try {
