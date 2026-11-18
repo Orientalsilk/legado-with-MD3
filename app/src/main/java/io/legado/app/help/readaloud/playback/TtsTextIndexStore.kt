@@ -103,6 +103,9 @@ internal object TtsTextIndexStore {
         val parent = file.parentFile
         parent?.mkdirs()
         val tmp = File.createTempFile("${file.name}-", ".tmp", parent)
+        val previousCache = cached
+            ?.takeIf { cachedPath == file.absolutePath }
+            ?.let { LinkedHashMap(it) }
         try {
             tmp.writeText(json.toJson(index, mapType))
             try {
@@ -115,6 +118,16 @@ internal object TtsTextIndexStore {
             cachedPath = file.absolutePath
             cachedLength = file.length()
             cachedLastModified = file.lastModified()
+        } catch (error: Throwable) {
+            // A failed commit must retain the last committed in-memory snapshot. Refresh its
+            // fingerprint to the current destination state so a later read does not discard it.
+            if (previousCache != null) {
+                cached = previousCache
+                cachedPath = file.absolutePath
+                cachedLength = if (file.isFile) file.length() else -1L
+                cachedLastModified = if (file.isFile) file.lastModified() else -1L
+            }
+            throw error
         } finally {
             tmp.delete()
         }
