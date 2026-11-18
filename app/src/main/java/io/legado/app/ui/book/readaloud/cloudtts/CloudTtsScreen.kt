@@ -1,10 +1,9 @@
 package io.legado.app.ui.book.readaloud.cloudtts
 
 import android.content.ClipData
-import android.util.Base64
-import java.io.ByteArrayOutputStream
 import android.media.MediaPlayer
 import android.provider.OpenableColumns
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -94,6 +93,7 @@ import io.legado.app.ui.widget.components.topbar.TopBarActionButton
 import io.legado.app.ui.widget.components.topbar.TopBarNavigationButton
 import io.legado.app.utils.GSON
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
 import io.legado.app.utils.toastOnUi
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -922,28 +922,28 @@ private fun CloudTtsEngineEditorContent(
         if (uri != null) {
             scope.launch {
                 runCatching {
-                    val displayName = context.contentResolver.query(
-                        uri,
-                        arrayOf(OpenableColumns.DISPLAY_NAME),
-                        null,
-                        null,
-                        null,
-                    )?.use { cursor ->
-                        if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
-                    }.orEmpty()
-                    val mimeType = when (context.contentResolver.getType(uri)?.lowercase()) {
-                        "audio/mpeg", "audio/mp3" -> "audio/mpeg"
-                        "audio/wav", "audio/x-wav", "audio/wave" -> "audio/wav"
-                        else -> when (displayName.substringAfterLast('.', "").lowercase()) {
-                            "mp3" -> "audio/mpeg"
-                            "wav" -> "audio/wav"
-                            else -> error("只支持 MP3 或 WAV 参考音频")
+                    val (mimeType, encoded) = withContext(Dispatchers.IO) {
+                        val displayName = context.contentResolver.query(
+                            uri,
+                            arrayOf(OpenableColumns.DISPLAY_NAME),
+                            null,
+                            null,
+                            null,
+                        )?.use { cursor ->
+                            if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
+                        }.orEmpty()
+                        val mimeType = when (context.contentResolver.getType(uri)?.lowercase()) {
+                            "audio/mpeg", "audio/mp3" -> "audio/mpeg"
+                            "audio/wav", "audio/x-wav", "audio/wave" -> "audio/wav"
+                            else -> when (displayName.substringAfterLast('.', "").lowercase()) {
+                                "mp3" -> "audio/mpeg"
+                                "wav" -> "audio/wav"
+                                else -> error("只支持 MP3 或 WAV 参考音频")
+                            }
                         }
-                    }
-                    val prefix = "data:$mimeType;base64,"
-                    val maxDataUrlLength = 10 * 1024 * 1024
-                    val maxRawBytes = ((maxDataUrlLength - prefix.length) / 4) * 3
-                    val encoded = withContext(Dispatchers.IO) {
+                        val prefix = "data:$mimeType;base64,"
+                        val maxDataUrlLength = 10 * 1024 * 1024
+                        val maxRawBytes = ((maxDataUrlLength - prefix.length) / 4) * 3
                         val output = ByteArrayOutputStream()
                         val input = context.contentResolver.openInputStream(uri)
                             ?: error("无法读取所选音频文件")
@@ -961,8 +961,10 @@ private fun CloudTtsEngineEditorContent(
                             }
                         }
                         require(output.size() > 0) { "参考音频文件为空" }
-                        Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                        mimeType to Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
                     }
+                    val prefix = "data:$mimeType;base64,"
+                    val maxDataUrlLength = 10 * 1024 * 1024
                     val dataUrl = prefix + encoded
                     require(dataUrl.length <= maxDataUrlLength) {
                         "参考音频编码后超过 MiMo 的 10 MB 限制，请选择更短或更小的音频"
