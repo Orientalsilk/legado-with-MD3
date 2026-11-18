@@ -74,6 +74,11 @@ val CloudTtsProviderType.profile: CloudTtsProviderProfile
         CloudTtsProviderType.Mimo -> CloudTtsProviderProfile(
             displayName = "Xiaomi MiMo",
             defaultModel = "mimo-v2.5-tts",
+            modelOptions = listOf(
+                "mimo-v2.5-tts",
+                "mimo-v2.5-tts-voicedesign",
+                "mimo-v2.5-tts-voiceclone",
+            ),
             audioFormats = listOf("wav"),
         )
         CloudTtsProviderType.AzureSpeech -> CloudTtsProviderProfile(
