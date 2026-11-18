@@ -17,15 +17,20 @@ internal class MimoCloudTtsProvider : CloudTtsProvider {
     override val type = CloudTtsProviderType.Mimo
 
     override fun fetchVoices(engine: CloudTtsEngine): List<CloudTtsVoiceDescriptor> =
-        if (engine.model == VOICE_CLONE_MODEL) {
-            listOf(CloudTtsVoiceDescriptor(
+        when (engine.model) {
+            VOICE_CLONE_MODEL -> listOf(CloudTtsVoiceDescriptor(
                 id = CLONE_VOICE_ID,
                 displayName = "MiMo 声音克隆",
                 locale = "zh-CN",
                 sampleRate = SAMPLE_RATE,
             ))
-        } else {
-            BUILT_IN_VOICES
+            VOICE_DESIGN_MODEL -> listOf(CloudTtsVoiceDescriptor(
+                id = DESIGN_VOICE_ID,
+                displayName = "MiMo 描述生成音色",
+                locale = "zh-CN",
+                sampleRate = SAMPLE_RATE,
+            ))
+            else -> BUILT_IN_VOICES
         }
 
     override fun synthesize(
@@ -37,23 +42,28 @@ internal class MimoCloudTtsProvider : CloudTtsProvider {
         require(request.text.isNotBlank()) { "朗读文本不能为空" }
 
         val isVoiceClone = engine.model == VOICE_CLONE_MODEL
+        val isVoiceDesign = engine.model == VOICE_DESIGN_MODEL
+        if (isVoiceDesign) {
+            require(request.instructions.isNotBlank()) {
+                "MiMo 音色设计模型需要填写音色描述（音色预设的「指令」）"
+            }
+        }
         val messages = buildMessages(request)
         val audio = JSONObject().put(
             "format",
-            if (isVoiceClone) CLONE_OUTPUT_FORMAT else "pcm16",
+            if (isVoiceClone || isVoiceDesign) CLONE_OUTPUT_FORMAT else "pcm16",
         )
-        if (isVoiceClone) {
-            val referenceAudio = parseReferenceAudio(engine.optionsJson)
-            audio.put("voice", referenceAudio)
-        } else {
-            audio.put("voice", request.voiceId)
+        when {
+            isVoiceClone -> audio.put("voice", parseReferenceAudio(engine.optionsJson))
+            isVoiceDesign -> Unit // Voice design is described in the user message; it has no voice field.
+            else -> audio.put("voice", request.voiceId)
         }
         val body = JSONObject().apply {
             put("model", engine.model)
             put("messages", messages)
             put("audio", audio)
-            // MiMo voice clone currently has no low-latency streaming endpoint.
-            put("stream", !isVoiceClone)
+            // Voice clone/design currently return a completed audio payload, not low-latency chunks.
+            put("stream", !(isVoiceClone || isVoiceDesign))
         }
         val baseUrl = engine.baseUrl.ifBlank { DEFAULT_BASE_URL }.trimEnd('/')
         val httpRequest = Request.Builder()
@@ -64,14 +74,15 @@ internal class MimoCloudTtsProvider : CloudTtsProvider {
             .build()
         return cloudTtsHttpClient.newCall(httpRequest).execute().use { response ->
             response.requireCloudTtsSuccessful("MiMo TTS")
-            if (isVoiceClone) {
+            if (isVoiceClone || isVoiceDesign) {
                 val payload = response.body.string()
                 val encoded = JSONObject(payload).optJSONArray("choices")
                     ?.optJSONObject(0)?.optJSONObject("message")
                     ?.optJSONObject("audio")?.optString("data")
-                require(!encoded.isNullOrBlank()) { "MiMo 声音克隆没有返回音频数据" }
+                val modelLabel = if (isVoiceClone) "声音克隆" else "音色设计"
+                require(!encoded.isNullOrBlank()) { "MiMo $modelLabel 没有返回音频数据" }
                 val bytes = Base64.decode(encoded, Base64.DEFAULT)
-                require(bytes.isNotEmpty()) { "MiMo 声音克隆返回了空音频" }
+                require(bytes.isNotEmpty()) { "MiMo $modelLabel 返回了空音频" }
                 CloudTtsAudio(bytes, CLONE_OUTPUT_FORMAT)
             } else {
                 val pcm = ByteArrayOutputStream()
@@ -128,7 +139,9 @@ internal class MimoCloudTtsProvider : CloudTtsProvider {
         const val DEFAULT_BASE_URL = "https://api.xiaomimimo.com/v1"
         const val SAMPLE_RATE = 24_000
         const val VOICE_CLONE_MODEL = "mimo-v2.5-tts-voiceclone"
+        const val VOICE_DESIGN_MODEL = "mimo-v2.5-tts-voicedesign"
         const val CLONE_VOICE_ID = "mimo_voice_clone"
+        const val DESIGN_VOICE_ID = "mimo_voice_design"
         const val CLONE_OUTPUT_FORMAT = "wav"
         const val REFERENCE_AUDIO_OPTION = "referenceAudio"
         const val MAX_REFERENCE_AUDIO_DATA_URL_LENGTH = 10 * 1024 * 1024
