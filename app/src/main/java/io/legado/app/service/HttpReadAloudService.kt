@@ -361,6 +361,7 @@ class HttpReadAloudService : BaseReadAloudService(),
     private var downloadTask: Coroutine<*>? = null
     private var preDownloadJob: Job? = null
     private var startupCacheSweepJob: Job? = null
+    private var cacheSessionGeneration: Long = 0L
     private var playIndexJob: Job? = null
     private var playbackGeneration = 0L
     private var synthesisNeedsRestart = false
@@ -378,9 +379,12 @@ class HttpReadAloudService : BaseReadAloudService(),
         super.onCreate()
         exoPlayer.addListener(this)
         applyCueVoiceEffect(nowSpeak)
-        // 清除上一次异常退出留下的即听即焚缓存。文件合成入口会等待该任务完成，
-        // 避免异步清扫误删本次刚合成的音频。
-        startupCacheSweepJob = lifecycleScope.launch(IO) { sweepBurnAfterReadLeftovers() }
+        // 维护任务按服务会话代次互斥，旧服务晚到的清理不能删掉新服务刚写的缓存。
+        val sessionGeneration = TtsCacheFileLock.beginServiceSession()
+        cacheSessionGeneration = sessionGeneration
+        startupCacheSweepJob = lifecycleScope.launch(IO) {
+            sweepBurnAfterReadLeftovers(sessionGeneration)
+        }
         lifecycleScope.launch {
             readAloudSettingsGateway.settings.collectLatest {
                 readAloudSettings = it
@@ -403,9 +407,10 @@ class HttpReadAloudService : BaseReadAloudService(),
         voiceEffectAudio.release()
         exoPlayer.release()
         cache.release()
+        val sessionGeneration = cacheSessionGeneration
         Coroutine.async {
             systemTtsFileSynthesizer.close()
-            removeCacheFile()
+            removeCacheFile(sessionGeneration)
         }
     }
 
@@ -1968,9 +1973,11 @@ class HttpReadAloudService : BaseReadAloudService(),
      * 那里，上一次会话留在 `httpTTS` 里的音频就没人管。这个语义下没有需要保护的正文，起手删干净即可；
      * 保留一段时间的模式不在这里动手，否则当前章的缓存会在开播前删掉，逼出整章重复合成。
      */
-    private suspend fun sweepBurnAfterReadLeftovers() {
+    private suspend fun sweepBurnAfterReadLeftovers(sessionGeneration: Long) {
         TtsCacheFileLock.withMaintenanceLock {
-            if (!cacheBurnAfterRead) return@withMaintenanceLock
+            if (!TtsCacheFileLock.isCurrentServiceSession(sessionGeneration) || !cacheBurnAfterRead) {
+                return@withMaintenanceLock
+            }
             val dir = File(ttsFolderPath)
             val files = dir.listFiles()?.toList().orEmpty()
             TtsCacheFileLock.invalidateAll()
@@ -1984,12 +1991,18 @@ class HttpReadAloudService : BaseReadAloudService(),
             }.distinct()
 
             cacheNames.forEach { name ->
+                if (!TtsCacheFileLock.isCurrentServiceSession(sessionGeneration)) {
+                    return@withMaintenanceLock
+                }
                 val target = File(dir, "$name.mp3")
                 TtsCacheFileLock.withLock(target) {
                     target.delete()
                     File(dir, "$name.mp3.part").delete()
                     removeTextIndexEntry(name)
                 }
+            }
+            if (!TtsCacheFileLock.isCurrentServiceSession(sessionGeneration)) {
+                return@withMaintenanceLock
             }
             files.filterNot { it.name.endsWith(".mp3") || it.name.endsWith(".mp3.part") }
                 .forEach { it.deleteRecursively() }
@@ -2001,8 +2014,11 @@ class HttpReadAloudService : BaseReadAloudService(),
      * 服务结束时按保留时间清理缓存。所有删除均与播放、预合成共用文件锁，
      * 防止刚完成的合成在清理后重新提交音频或文字索引。
      */
-    private suspend fun removeCacheFile() {
+    private suspend fun removeCacheFile(sessionGeneration: Long) {
         TtsCacheFileLock.withMaintenanceLock {
+            if (!TtsCacheFileLock.isCurrentServiceSession(sessionGeneration)) {
+                return@withMaintenanceLock
+            }
             val keepTime = readAloudSettings.audioCacheCleanTime * 60 * 1000L
             val protectCurrentChapter = keepTime > 0
             val titleMd5 = if (protectCurrentChapter) {
@@ -2014,6 +2030,9 @@ class HttpReadAloudService : BaseReadAloudService(),
             val now = System.currentTimeMillis()
 
             files.forEach { file ->
+                if (!TtsCacheFileLock.isCurrentServiceSession(sessionGeneration)) {
+                    return@withMaintenanceLock
+                }
                 when {
                     file.name.endsWith(".mp3.part") -> {
                         val name = file.name.removeSuffix(".mp3.part")
@@ -2045,7 +2064,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                 }
             }
 
-            if (keepTime <= 0) {
+            if (keepTime <= 0 && TtsCacheFileLock.isCurrentServiceSession(sessionGeneration)) {
                 TtsTextIndexStore.delete(File(dir, "tts_cache_index.json"))
             }
         }
