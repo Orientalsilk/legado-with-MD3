@@ -1064,6 +1064,15 @@ private fun CloudTtsEngineEditorContent(
                     )
                 }
                 if (provider == CloudTtsProviderType.Mimo &&
+                    editor.model == "mimo-v2.5-tts-voicedesign"
+                ) {
+                    AppText(
+                        text = "音色描述请填写在音色预设的「指令」字段中；此模型使用非流式请求，不需要参考音频。",
+                        style = LegadoTheme.typography.bodyMedium,
+                        color = LegadoTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (provider == CloudTtsProviderType.Mimo &&
                     editor.model == "mimo-v2.5-tts-voiceclone"
                 ) {
                     Field(
