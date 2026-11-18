@@ -969,8 +969,11 @@ private fun CloudTtsEngineEditorContent(
                     require(dataUrl.length <= maxDataUrlLength) {
                         "参考音频编码后超过 MiMo 的 10 MB 限制，请选择更短或更小的音频"
                     }
-                    val options = JSONObject(editor.optionsJson.ifBlank { "{}" })
-                        .put("referenceAudio", dataUrl)
+                    val options = runCatching {
+                        JSONObject(editor.optionsJson)
+                    }.getOrElse {
+                        JSONObject()
+                    }.put("referenceAudio", dataUrl)
                     update(editor.copy(optionsJson = options.toString()))
                 }.onSuccess {
                     context.toastOnUi("参考音频已载入，保存引擎后生效")
@@ -1156,7 +1159,7 @@ private fun CloudTtsEngineEditorContent(
                 ) {
                     MediumTonalButton(
                         onClick = {
-                            referenceAudioPicker.launch(arrayOf("audio/mpeg", "audio/wav", "audio/x-wav"))
+                            referenceAudioPicker.launch(arrayOf("audio/*"))
                         },
                         modifier = Modifier.fillMaxWidth(),
                         text = if (hasReferenceAudio) "重新选择参考音频" else "选择 MP3 / WAV 参考音频",
@@ -1170,7 +1173,11 @@ private fun CloudTtsEngineEditorContent(
                         MediumTonalButton(
                             onClick = {
                                 runCatching {
-                                    val options = JSONObject(editor.optionsJson).apply {
+                                    val options = runCatching {
+                                        JSONObject(editor.optionsJson)
+                                    }.getOrElse {
+                                        JSONObject()
+                                    }.apply {
                                         remove("referenceAudio")
                                     }
                                     update(editor.copy(optionsJson = options.toString()))
