@@ -758,7 +758,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         val canBurnCache = cacheBurnAfterRead && withContext(Main) {
             exoPlayer.mediaItemCount == 0
         }
-        suspend fun saveAndMaybeBurn(): String? = TtsCacheFileLock.withLock(cacheFile) {
+        suspend fun saveAndMaybeBurn(): File? = TtsCacheFileLock.withLock(cacheFile) {
             val copied = ReadAloudAudioStore.saveFrom(bookUrl, fileName, cacheFile)
             if (copied != null && canBurnCache) {
                 cacheFile.delete()
