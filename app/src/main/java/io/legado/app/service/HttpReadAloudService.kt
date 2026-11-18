@@ -918,68 +918,68 @@ class HttpReadAloudService : BaseReadAloudService(),
                         AppLog.put("阅读段落内容为空，使用无声音频代替。\n朗读文本：${synthesis.text}")
                         createSilentSoundIfMissing(fileName)
                     } else if (downloaded == null && !hasSpeakFile(fileName)) {
-                        withSpeakFileLock(fileName) {
-                        // 等锁期间另一条路径可能已经把这句合成好了
-                        if (!hasSpeakFile(fileName)) {
-                        runCatching {
-                            when (routedVoice.engineType) {
-                                ReadAloudVoice.ENGINE_SYSTEM -> {
-                                    val config = runCatching {
-                                        GSON.fromJson(
-                                            routedVoice.traitsJson,
-                                            SystemTtsVoiceConfig::class.java,
-                                        )
-                                    }.getOrNull() ?: SystemTtsVoiceConfig()
-                                    // 全局语速走播放端变速, 系统合成只用音色自带语速, 避免叠加
-                                    val synthesized = synthesizeSpeakFile(fileName) { output ->
-                                        systemTtsFileSynthesizer.synthesize(
-                                            routedVoice.engineId,
-                                            routedVoice.speakerId,
-                                            speakText,
-                                            output,
-                                            config.speechRate ?: 1f,
-                                            config.pitch ?: 1f,
-                                        )
-                                    }
-                                    if (!synthesized) {
-                                        throw NoStackTraceException("系统引擎未返回当前句的音频")
-                                    }
-                                }
+                        val synthesized = withSpeakFileLock(fileName) {
+                            // 等锁期间另一条路径可能已经把这句合成好了
+                            if (hasSpeakFile(fileName)) {
+                                true
+                            } else {
+                                runCatching {
+                                    when (routedVoice.engineType) {
+                                        ReadAloudVoice.ENGINE_SYSTEM -> {
+                                            val config = runCatching {
+                                                GSON.fromJson(
+                                                    routedVoice.traitsJson,
+                                                    SystemTtsVoiceConfig::class.java,
+                                                )
+                                            }.getOrNull() ?: SystemTtsVoiceConfig()
+                                            // 全局语速走播放端变速, 系统合成只用音色自带语速, 避免叠加
+                                            val success = synthesizeSpeakFile(fileName) { output ->
+                                                systemTtsFileSynthesizer.synthesize(
+                                                    routedVoice.engineId,
+                                                    routedVoice.speakerId,
+                                                    speakText,
+                                                    output,
+                                                    config.speechRate ?: 1f,
+                                                    config.pitch ?: 1f,
+                                                )
+                                            }
+                                            if (!success) {
+                                                throw NoStackTraceException("系统引擎未返回当前句的音频")
+                                            }
+                                        }
 
-                                ReadAloudVoice.ENGINE_CLOUD -> {
-                                    val synthesized = synthesizeSpeakFile(fileName) { output ->
-                                        cloudTtsAudioSynthesizer.synthesize(
-                                            routedVoice,
-                                            speakText,
-                                            output,
-                                            styleOverride = cueEmotion,
-                                            characterPerformance = characterPerformance,
-                                            roleType = cueRoleType,
-                                        )
-                                    }
-                                    if (!synthesized) {
-                                        throw NoStackTraceException("云端引擎未返回当前句的音频")
-                                    }
-                                }
+                                        ReadAloudVoice.ENGINE_CLOUD -> {
+                                            val success = synthesizeSpeakFile(fileName) { output ->
+                                                cloudTtsAudioSynthesizer.synthesize(
+                                                    routedVoice,
+                                                    speakText,
+                                                    output,
+                                                    styleOverride = cueEmotion,
+                                                    characterPerformance = characterPerformance,
+                                                    roleType = cueRoleType,
+                                                )
+                                            }
+                                            if (!success) {
+                                                throw NoStackTraceException("云端引擎未返回当前句的音频")
+                                            }
+                                        }
 
-                                else -> {
-                                    val inputStream = getSpeakStream(
-                                        itemHttpTts, speakText, routedVoice, cueEmotion
-                                    )
-                                    val input = inputStream
-                                        ?: throw NoStackTraceException("HTTP 引擎未返回当前句的音频")
-                                    if (!createSpeakFile(fileName, input)) {
-                                        throw NoStackTraceException("HTTP 引擎音频写入缓存失败")
+                                        else -> {
+                                            val inputStream = getSpeakStream(
+                                                itemHttpTts, speakText, routedVoice, cueEmotion
+                                            ) ?: throw NoStackTraceException("HTTP 引擎未返回当前句的音频")
+                                            if (!createSpeakFile(fileName, inputStream)) {
+                                                throw NoStackTraceException("HTTP 引擎音频写入缓存失败")
+                                            }
+                                        }
                                     }
-                                }
+                                }.onFailure {
+                                    if (it is CancellationException) throw it
+                                    withContext(Main) { failSynthesis(generation, it) }
+                                }.isSuccess
                             }
-                        }.onFailure {
-                            if (it is CancellationException) throw it
-                            withContext(Main) { failSynthesis(generation, it) }
-                            return@execute
                         }
-                        }
-                        }
+                        if (!synthesized) return@execute
                     }
                     if (downloaded == null && speakText.isNotEmpty() && hasSpeakFile(fileName)) {
                         writeTextIndexEntry(fileName, speakText)
