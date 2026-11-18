@@ -2,6 +2,7 @@ package io.legado.app.help.readaloud.playback
 
 import io.legado.app.domain.model.readaloud.CloudTtsEngine
 import io.legado.app.domain.model.readaloud.CloudTtsProviderType
+import io.legado.app.domain.model.readaloud.CloudTtsSynthesisRequest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -41,6 +42,7 @@ class MimoCloudTtsProviderTest {
         assertEquals("mimo_voice_clone", voices.single().id)
         assertEquals("MiMo 声音克隆", voices.single().displayName)
     }
+
     @Test
     fun `exposes a dedicated selectable voice for the voice design model`() {
         val voices = MimoCloudTtsProvider().fetchVoices(
