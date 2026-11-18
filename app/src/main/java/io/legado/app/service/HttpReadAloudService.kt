@@ -888,10 +888,28 @@ class HttpReadAloudService : BaseReadAloudService(),
      * 而一次合成要几秒、期间 `.part` 和正式文件都还没落盘，另一条路径查缓存必然查不到、
      * 跟着重复请求。上锁排队 + 拿到锁后再查一次缓存，把重复请求压成一次。
      */
-    private suspend fun <T> withSpeakFileLock(
+    private suspend fun withSpeakFileLock(
         fileName: String,
-        block: suspend () -> T,
-    ): T = TtsCacheFileLock.withLock(getSpeakFileAsMd5(fileName), block)
+        block: suspend () -> Boolean,
+    ): Boolean {
+        val target = getSpeakFileAsMd5(fileName)
+        return TtsCacheFileLock.withVersionedLock(target) { token ->
+            if (!TtsCacheFileLock.isCurrent(token)) {
+                false
+            } else {
+                val result = block()
+                if (TtsCacheFileLock.isCurrent(token)) {
+                    result
+                } else {
+                    // The cache was invalidated while synthesis was in flight.
+                    // Do not leave its just-committed output behind.
+                    target.delete()
+                    File("${target.absolutePath}.part").delete()
+                    false
+                }
+            }
+        }
+    }
 
     private fun downloadAndPlayAudios() {
         exoPlayer.clearMediaItems()
@@ -1802,6 +1820,7 @@ class HttpReadAloudService : BaseReadAloudService(),
     private suspend fun createSilentSoundIfMissing(fileName: String) {
         withSpeakFileLock(fileName) {
             if (!hasSpeakFile(fileName)) createSilentSound(fileName)
+            true
         }
     }
 
