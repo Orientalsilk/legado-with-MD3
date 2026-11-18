@@ -378,4 +378,9 @@ tasks.withType<Test>().configureEach {
     // Robolectric's FileDescriptor interceptor reflects into JDK internals on Java 21.
     // Export the package explicitly so Android resource-backed unit tests can initialize.
     jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
+    // Robolectric otherwise downloads android-all from repo1.maven.org. GitHub-hosted
+    // runners can receive HTTP 429 there after many isolated test JVMs; use the canonical
+    // Maven Central endpoint instead. This affects only Robolectric's runtime SDK artifacts.
+    systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+    systemProperty("robolectric.dependency.repo.id", "central")
 }
