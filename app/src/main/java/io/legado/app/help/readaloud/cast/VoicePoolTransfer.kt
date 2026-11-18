@@ -432,13 +432,13 @@ object VoicePoolTransfer {
     fun readMultiTtsYaml(input: InputStream): String {
         val bytes = input.readBytes()
         if (bytes.size < 2 || bytes[0] != 'P'.code.toByte() || bytes[1] != 'K'.code.toByte()) {
-            return bytes.toString(Charsets.UTF_8)
+            return bytes.toString(Charsets.UTF_8).removePrefix("\uFEFF")
         }
         ZipInputStream(ByteArrayInputStream(bytes)).use { zip ->
             while (true) {
                 val entry = zip.nextEntry ?: break
                 if (!entry.isDirectory && entry.name.endsWith(".yaml", ignoreCase = true)) {
-                    return zip.reader().readText()
+                    return zip.reader().readText().removePrefix("\uFEFF")
                 }
                 zip.closeEntry()
             }
@@ -454,6 +454,7 @@ object VoicePoolTransfer {
      * 而这份结构只有三层，逐行读反而稳。音效与停用的条目在这里就剔掉，与 TTS Server 同一套规矩。
      */
     fun parseMultiTts(text: String): TtsServerPreview {
+        val normalizedText = text.removePrefix("\uFEFF")
         val pools = LinkedHashMap<String, ArrayList<TtsServerVoice>>()
         var effects = 0
         var disabled = 0
@@ -485,7 +486,7 @@ object VoicePoolTransfer {
                 TtsServerVoice(label, key)
         }
 
-        for (raw in text.lineSequence()) {
+        for (raw in normalizedText.lineSequence()) {
             val line = raw.trimEnd()
             val body = line.trim()
             if (body.isEmpty() || body.startsWith("#")) continue
