@@ -798,7 +798,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         return withSpeakFileLock(
             fileName,
             onSuccess = {
-                if (speakText.isNotEmpty() && hasSpeakFile(fileName)) {
+                if (speakText.isNotEmpty() && hasCachedSpeakFile(fileName)) {
                     writeTextIndexEntry(fileName, speakText)
                 }
             },
@@ -971,7 +971,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                         val synthesized = withSpeakFileLock(
                             fileName,
                             onSuccess = {
-                                if (speakText.isNotEmpty() && hasSpeakFile(fileName)) {
+                                if (speakText.isNotEmpty() && hasCachedSpeakFile(fileName)) {
                                     writeTextIndexEntry(fileName, speakText)
                                 }
                             },
@@ -1267,7 +1267,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         return withSpeakFileLock(
             fileName,
             onSuccess = {
-                if (speakText.isNotEmpty() && hasSpeakFile(fileName)) {
+                if (speakText.isNotEmpty() && hasCachedSpeakFile(fileName)) {
                     writeTextIndexEntry(fileName, speakText)
                 }
             },
@@ -1869,6 +1869,12 @@ class HttpReadAloudService : BaseReadAloudService(),
      */
     private fun hasSpeakFile(name: String): Boolean {
         val file = speakFileForPlay(name)
+        return file.length() > 0L && !ReadAloudAudioStore.isSilentPlaceholder(file)
+    }
+
+    /** Whether a playable cache file (rather than a downloaded copy) exists locally. */
+    private fun hasCachedSpeakFile(name: String): Boolean {
+        val file = getSpeakFileAsMd5(name)
         return file.length() > 0L && !ReadAloudAudioStore.isSilentPlaceholder(file)
     }
 
