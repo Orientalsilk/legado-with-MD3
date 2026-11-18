@@ -96,6 +96,15 @@ class AiCastIdentityTest {
         assertNull(canonicalCastName("隔壁老王", characters, profiles))
     }
 
+    @Test
+    fun `a discovered profile resolves to its main name before a cast row exists`() {
+        val profiles = listOf(
+            profile("profile-id", "李小花", aliases = listOf("小花")),
+        )
+
+        assertEquals("李小花", canonicalCastName("小花", emptyList(), profiles))
+    }
+
     private companion object {
         const val BOOK = "file:///book"
     }
