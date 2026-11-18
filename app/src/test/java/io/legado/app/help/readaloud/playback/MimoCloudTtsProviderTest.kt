@@ -40,4 +40,20 @@ class MimoCloudTtsProviderTest {
         assertEquals("mimo_voice_clone", voices.single().id)
         assertEquals("MiMo 声音克隆", voices.single().displayName)
     }
+    @Test
+    fun `exposes a dedicated selectable voice for the voice design model`() {
+        val voices = MimoCloudTtsProvider().fetchVoices(
+            CloudTtsEngine(
+                id = "mimo-design",
+                name = "MiMo Design",
+                provider = CloudTtsProviderType.Mimo,
+                model = "mimo-v2.5-tts-voicedesign",
+            ),
+        )
+
+        assertEquals(1, voices.size)
+        assertEquals("mimo_voice_design", voices.single().id)
+        assertEquals("MiMo 描述生成音色", voices.single().displayName)
+    }
+
 }
