@@ -112,7 +112,6 @@ import java.io.IOException
 import java.io.InputStream
 import java.net.ConnectException
 import java.net.SocketTimeoutException
-import java.util.concurrent.ConcurrentHashMap
 
 /**
  * 在线朗读
@@ -877,19 +876,12 @@ class HttpReadAloudService : BaseReadAloudService(),
      * 而一次合成要几秒、期间 `.part` 和正式文件都还没落盘，另一条路径查缓存必然查不到、
      * 跟着重复请求。上锁排队 + 拿到锁后再查一次缓存，把重复请求压成一次。
      */
-    private val speakFileLocks = ConcurrentHashMap<String, Mutex>()
+    private val speakFileLocks = KeyedMutex()
 
-    private suspend inline fun <T> withSpeakFileLock(
+    private suspend fun <T> withSpeakFileLock(
         fileName: String,
         block: suspend () -> T,
-    ): T {
-        val mutex = speakFileLocks.getOrPut(fileName) { Mutex() }
-        return try {
-            mutex.withLock { block() }
-        } finally {
-            speakFileLocks.remove(fileName, mutex)
-        }
-    }
+    ): T = speakFileLocks.withLock(fileName, block)
 
     private fun downloadAndPlayAudios() {
         exoPlayer.clearMediaItems()
