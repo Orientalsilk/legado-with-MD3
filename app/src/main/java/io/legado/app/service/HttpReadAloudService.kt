@@ -1745,10 +1745,9 @@ class HttpReadAloudService : BaseReadAloudService(),
                 // Editing the engine can change its model, endpoint or MiMo clone reference
                 // audio without changing the voice preset row. Include the engine revision
                 // so old MP3 files are not reused after those settings change.
-                val engine = appDb.cloudTtsEngineDao.getSync(routedVoice.engineId)
-                val engineRevision = engine?.let {
-                    "${it.provider}:${it.model}:${it.updatedAt}"
-                } ?: "missing"
+                // Only read the small timestamp projection. optionsJson may contain a 10 MB
+                // voice-clone reference clip and must not be loaded for every spoken cue.
+                val engineRevision = appDb.cloudTtsEngineDao.getUpdatedAt(routedVoice.engineId) ?: 0L
                 "cloud:${routedVoice.id}:${routedVoice.revision}:$engineRevision:" +
                         "${CloudTtsEmotionMapper.VERSION}:$cueEmotion:" +
                         "${CharacterPerformanceInstructionBuilder.VERSION}:" +
