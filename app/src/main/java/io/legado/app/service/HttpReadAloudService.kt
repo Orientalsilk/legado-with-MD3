@@ -786,7 +786,14 @@ class HttpReadAloudService : BaseReadAloudService(),
         val config = runCatching {
             GSON.fromJson(routedVoice.traitsJson, SystemTtsVoiceConfig::class.java)
         }.getOrNull() ?: SystemTtsVoiceConfig()
-        val synthesized = withSpeakFileLock(fileName) {
+        return withSpeakFileLock(
+            fileName,
+            onSuccess = {
+                if (speakText.isNotEmpty() && hasSpeakFile(fileName)) {
+                    writeTextIndexEntry(fileName, speakText)
+                }
+            },
+        ) {
             if (hasSpeakFile(fileName)) {
                 true
             } else {
@@ -802,8 +809,6 @@ class HttpReadAloudService : BaseReadAloudService(),
                 }
             }
         }
-        if (synthesized) writeTextIndexEntry(fileName, speakText)
-        return synthesized
     }
 
     private fun cancelAudioDownload() {
@@ -890,6 +895,7 @@ class HttpReadAloudService : BaseReadAloudService(),
      */
     private suspend fun withSpeakFileLock(
         fileName: String,
+        onSuccess: (() -> Unit)? = null,
         block: suspend () -> Boolean,
     ): Boolean {
         val target = getSpeakFileAsMd5(fileName)
@@ -898,16 +904,31 @@ class HttpReadAloudService : BaseReadAloudService(),
                 false
             } else {
                 val result = block()
-                if (TtsCacheFileLock.isCurrent(token)) {
-                    result
-                } else {
-                    // The cache was invalidated while synthesis was in flight.
-                    // Do not leave its just-committed output behind.
-                    target.delete()
-                    File("${target.absolutePath}.part").delete()
+                if (!TtsCacheFileLock.isCurrent(token)) {
+                    discardInvalidatedSpeakFile(fileName, target)
                     false
+                } else {
+                    // Audio and text metadata share the same critical section. This
+                    // prevents a late index write from resurrecting a deleted entry.
+                    if (result) onSuccess?.invoke()
+                    if (TtsCacheFileLock.isCurrent(token)) {
+                        result
+                    } else {
+                        discardInvalidatedSpeakFile(fileName, target)
+                        false
+                    }
                 }
             }
+        }
+    }
+
+    private fun discardInvalidatedSpeakFile(fileName: String, target: File) {
+        target.delete()
+        File("${target.absolutePath}.part").delete()
+        try {
+            val baseDir = externalCacheDir ?: cacheDir
+            TtsTextIndexStore.remove(File(baseDir, "httpTTS/tts_cache_index.json"), fileName)
+        } catch (_: Exception) {
         }
     }
 
@@ -939,8 +960,15 @@ class HttpReadAloudService : BaseReadAloudService(),
                     if (downloaded == null && speakText.isEmpty()) {
                         AppLog.put("阅读段落内容为空，使用无声音频代替。\n朗读文本：${synthesis.text}")
                         createSilentSoundIfMissing(fileName)
-                    } else if (downloaded == null && !hasSpeakFile(fileName)) {
-                        val synthesized = withSpeakFileLock(fileName) {
+                    } else if (downloaded == null) {
+                        val synthesized = withSpeakFileLock(
+                            fileName,
+                            onSuccess = {
+                                if (speakText.isNotEmpty() && hasSpeakFile(fileName)) {
+                                    writeTextIndexEntry(fileName, speakText)
+                                }
+                            },
+                        ) {
                             // 等锁期间另一条路径可能已经把这句合成好了
                             if (hasSpeakFile(fileName)) {
                                 true
@@ -1002,9 +1030,6 @@ class HttpReadAloudService : BaseReadAloudService(),
                             }
                         }
                         if (!synthesized) return@execute
-                    }
-                    if (downloaded == null && speakText.isNotEmpty() && hasSpeakFile(fileName)) {
-                        writeTextIndexEntry(fileName, speakText)
                     }
                     val mediaItem = downloaded ?: MediaItem.Builder()
                         .setUri(Uri.fromFile(speakFileForPlay(fileName))).setTag(synthesis.position).build()
@@ -1232,7 +1257,14 @@ class HttpReadAloudService : BaseReadAloudService(),
             createSilentSoundIfMissing(fileName)
             return true
         }
-        val success = withSpeakFileLock(fileName) {
+        return withSpeakFileLock(
+            fileName,
+            onSuccess = {
+                if (speakText.isNotEmpty() && hasSpeakFile(fileName)) {
+                    writeTextIndexEntry(fileName, speakText)
+                }
+            },
+        ) {
             if (hasSpeakFile(fileName)) {
                 // 实时播放那条路径正在合成这一句：等它，别再向 TTS 发第二次请求
                 true
@@ -1269,10 +1301,6 @@ class HttpReadAloudService : BaseReadAloudService(),
             }
         }
         }
-        if (success && speakText.isNotEmpty()) {
-            writeTextIndexEntry(fileName, speakText)
-        }
-        return success
     }
 
     /**
