@@ -61,6 +61,30 @@ class VoicePoolTransferMultiTtsTest {
         assertEquals(2, VoicePoolTransfer.parseMultiTts(text).pools.size)
     }
 
+    @Test
+    fun `accepts UTF-8 BOM in plain yaml and parser input`() {
+        val bomYaml = "\uFEFF$YAML"
+        val text = VoicePoolTransfer.readMultiTtsYaml(ByteArrayInputStream(bomYaml.toByteArray()))
+
+        assertEquals(listOf("男童", "男老年"), VoicePoolTransfer.parseMultiTts(text).pools.map { it.name })
+        assertEquals(2, VoicePoolTransfer.parseMultiTts(bomYaml).voiceCount)
+    }
+
+    @Test
+    fun `accepts UTF-8 BOM inside exported zip`() {
+        val zip = ByteArrayOutputStream().use { bytes ->
+            ZipOutputStream(bytes).use { out ->
+                out.putNextEntry(ZipEntry("voice_pool.yaml"))
+                out.write("\uFEFF$YAML".toByteArray())
+                out.closeEntry()
+            }
+            bytes.toByteArray()
+        }
+
+        val text = VoicePoolTransfer.readMultiTtsYaml(ByteArrayInputStream(zip))
+        assertEquals(2, VoicePoolTransfer.parseMultiTts(text).pools.size)
+    }
+
     private companion object {
         val YAML = """
             男童:
