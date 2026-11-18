@@ -1081,7 +1081,7 @@ private fun CloudTtsEngineEditorContent(
                         "参考音频配置 JSON（referenceAudio）"
                     )
                     AppText(
-                        text = "填入 {\"referenceAudio\":\"data:audio/mpeg;base64,...\"} 或 WAV Data URL。克隆模型使用非流式请求；参考音频仅保存在本机引擎配置中。",
+                        text = "填入 {\"referenceAudio\":\"data:audio/mpeg;base64,...\"} 或 WAV Data URL。克隆模型使用非流式请求；参考音频仅保存在本机引擎配置中。同一引擎可建多个角色预设，在音色编辑中展开「手动音色 ID」并分别填写 narration、dialogue 等不同 ID。",
                         style = LegadoTheme.typography.bodyMedium,
                         color = LegadoTheme.colorScheme.onSurfaceVariant,
                     )
