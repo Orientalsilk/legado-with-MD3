@@ -375,4 +375,7 @@ dependencies {
 tasks.withType<Test>().configureEach {
     forkEvery = 1
     maxParallelForks = 1
+    // Robolectric's FileDescriptor interceptor reflects into JDK internals on Java 21.
+    // Export the package explicitly so Android resource-backed unit tests can initialize.
+    jvmArgs("--add-exports=java.base/jdk.internal.access=ALL-UNNAMED")
 }
