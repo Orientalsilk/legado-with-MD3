@@ -37,15 +37,29 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.PERSONAL_KEYSTORE_B64 }}
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 --decode > "$GITHUB_WORKSPACE/app/personal.jks"
-            echo "Using the personal keystore from repository secrets."
-          else
-            echo "::warning::PERSONAL_KEYSTORE_B64 is not set. Using a temporary key: this APK installs, but cannot update over an APK signed with a different key."
-            keytool -genkeypair -keystore "$GITHUB_WORKSPACE/app/personal.jks" -alias legado \
-              -keyalg RSA -keysize 2048 -validity 36500 \
-              -storepass legado-personal -keypass legado-personal -dname "CN=Legado Temporary"
+          set -euo pipefail
+
+          # Never create a throwaway signing key: it would produce an APK that
+          # cannot update an existing installation signed with the personal key.
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::PERSONAL_KEYSTORE_B64 is missing. Refusing to build an APK with a different signing identity."
+            exit 1
           fi
+
+          KEYSTORE="$GITHUB_WORKSPACE/app/personal.jks"
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEYSTORE"
+          if [ ! -s "$KEYSTORE" ]; then
+            echo "::error::The configured personal keystore is empty."
+            exit 1
+          fi
+
+          # Validate the existing keystore and the alias expected by Gradle.
+          if ! keytool -list -keystore "$KEYSTORE" -storepass legado-personal -alias legado >/dev/null 2>&1; then
+            echo "::error::The personal keystore is invalid, its password is incorrect, or alias 'legado' is missing. No signing key was changed."
+            exit 1
+          fi
+
+          echo "Validated the personal signing keystore and alias."
           {
             echo ""
             echo "RELEASE_STORE_FILE=personal.jks"
