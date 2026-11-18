@@ -774,21 +774,27 @@ class HttpReadAloudService : BaseReadAloudService(),
         }
         val speakText = content.readAloudSpeechText()
         if (speakText.isEmpty()) {
-            createSilentSound(fileName)
+            createSilentSoundIfMissing(fileName)
             return true
         }
         val config = runCatching {
             GSON.fromJson(routedVoice.traitsJson, SystemTtsVoiceConfig::class.java)
         }.getOrNull() ?: SystemTtsVoiceConfig()
-        val synthesized = synthesizeSpeakFile(fileName) { output ->
-            systemTtsFileSynthesizer.synthesize(
-                routedVoice.engineId,
-                routedVoice.speakerId,
-                speakText,
-                output,
-                config.speechRate ?: 1f,
-                config.pitch ?: 1f,
-            )
+        val synthesized = withSpeakFileLock(fileName) {
+            if (hasSpeakFile(fileName)) {
+                true
+            } else {
+                synthesizeSpeakFile(fileName) { output ->
+                    systemTtsFileSynthesizer.synthesize(
+                        routedVoice.engineId,
+                        routedVoice.speakerId,
+                        speakText,
+                        output,
+                        config.speechRate ?: 1f,
+                        config.pitch ?: 1f,
+                    )
+                }
+            }
         }
         if (synthesized) writeTextIndexEntry(fileName, speakText)
         return synthesized
@@ -910,7 +916,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     val speakText = synthesis.speakText
                     if (downloaded == null && speakText.isEmpty()) {
                         AppLog.put("阅读段落内容为空，使用无声音频代替。\n朗读文本：${synthesis.text}")
-                        createSilentSound(fileName)
+                        createSilentSoundIfMissing(fileName)
                     } else if (downloaded == null && !hasSpeakFile(fileName)) {
                         withSpeakFileLock(fileName) {
                         // 等锁期间另一条路径可能已经把这句合成好了
@@ -1158,7 +1164,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                         routedVoice, cue, content, prepared.chapterTitle, httpTts,
                     )
                     if (!success) {
-                        createSilentSound(fileName)
+                        createSilentSoundIfMissing(fileName)
                         failedCount++
                     }
                 } finally {
@@ -1201,7 +1207,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         val fileName = md5SpeakFileName(content, chapterTitle, sourceKey = sourceKey)
         val speakText = content.readAloudSpeechText()
         if (speakText.isEmpty()) {
-            createSilentSound(fileName)
+            createSilentSoundIfMissing(fileName)
             return true
         }
         val success = withSpeakFileLock(fileName) {
@@ -1439,7 +1445,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                             routedVoice, cue, content, prepared.chapterTitle, httpTts,
                         )
                         if (!success) {
-                            createSilentSound(fileName)
+                            createSilentSoundIfMissing(fileName)
                             failedCount++
                         }
                     } else {
@@ -1817,6 +1823,16 @@ class HttpReadAloudService : BaseReadAloudService(),
         val part = createSpeakPartFile(fileName)
         part.outputStream().use { resources.openRawResource(R.raw.silent_sound).copyTo(it) }
         commitSpeakPart(fileName, part)
+    }
+
+    /**
+     * Placeholder writes share the same .part path as real synthesis. Serialize them with
+     * real audio writers and never replace a valid file produced by another concurrent path.
+     */
+    private suspend fun createSilentSoundIfMissing(fileName: String) {
+        withSpeakFileLock(fileName) {
+            if (!hasSpeakFile(fileName)) createSilentSound(fileName)
+        }
     }
 
     /**
