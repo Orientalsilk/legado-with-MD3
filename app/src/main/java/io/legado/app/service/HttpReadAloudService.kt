@@ -752,18 +752,26 @@ class HttpReadAloudService : BaseReadAloudService(),
         bookUrl: String,
         fileName: String,
     ): String? {
-        ReadAloudAudioStore.saveFrom(
-            bookUrl, fileName, getSpeakFileAsMd5(fileName)
-        ) ?: run {
+        val cacheFile = getSpeakFileAsMd5(fileName)
+        // 下载区复制需要读取一份完整且稳定的源文件；复制与缓存清理共用同一把锁。
+        // 播放器仍持有媒体项时不删源文件，避免正在播放/排队播放的 FileDataSource 被截断。
+        val canBurnCache = cacheBurnAfterRead && withContext(Main) {
+            exoPlayer.mediaItemCount == 0
+        }
+        if (canBurnCache) TtsCacheFileLock.invalidate(cacheFile)
+        val downloadedFile = TtsCacheFileLock.withLock(cacheFile) {
+            val saved = ReadAloudAudioStore.saveFrom(bookUrl, fileName, cacheFile)
+            if (saved != null && canBurnCache) {
+                cacheFile.delete()
+                File("${cacheFile.absolutePath}.part").delete()
+                removeTextIndexEntry(fileName)
+            }
+            saved
+        } ?: run {
             // 合成说成功、缓存里却没有可复制的完整文件（被清/被并发删掉）：
             // 这一句同样没进下载区，计数要跟上，否则界面上是「少了句但 0 失败」
             audioDownloadFailed.incrementAndGet()
             return null
-        }
-        // 播放先认下载区（见 [speakFileForPlay]），落进下载区后缓存这份副本没有别的用途。即听即焚下
-        // 当场删：一次下载能合成整本书，等不到起手那次清扫，占用会一路涨。
-        if (cacheBurnAfterRead) {
-            FileUtils.delete(getSpeakFileAsMd5(fileName).absolutePath)
         }
         val done = audioDownloadSentences.incrementAndGet()
         ReadAloudAudioStore.updateProgress {
@@ -2253,7 +2261,6 @@ class HttpReadAloudService : BaseReadAloudService(),
         if (synthesisNeedsRestart) return
         val mediaItem = exoPlayer.currentMediaItem ?: return
         AppLog.put("朗读错误\n${contentList.getOrNull(nowSpeak).orEmpty()}", error)
-        deleteCachedSpeakFile(mediaItem)
         playErrorNo++
         if (playErrorNo >= 5) {
             toastOnUi("朗读连续5次错误, 最后一次错误代码(${error.localizedMessage})")
@@ -2268,10 +2275,16 @@ class HttpReadAloudService : BaseReadAloudService(),
                 it.storedOffset(positionMs, durationMs)
             } else null
         }
-        failSynthesis(playbackGeneration, error, retryOffset)
+        // 先完成淘汰再触发重合成，否则重试任务可能在旧文件删除前抢到同名缓存。
+        lifecycleScope.launch(IO) {
+            deleteCachedSpeakFile(mediaItem)
+            withContext(Main) {
+                failSynthesis(playbackGeneration, error, retryOffset)
+            }
+        }
     }
 
-    private fun deleteCachedSpeakFile(mediaItem: MediaItem) {
+    private suspend fun deleteCachedSpeakFile(mediaItem: MediaItem) {
         val uri = mediaItem.localConfiguration?.uri ?: return
         if (uri.scheme != "file") return
         val filePath = uri.path ?: return
@@ -2279,7 +2292,12 @@ class HttpReadAloudService : BaseReadAloudService(),
             val file = File(filePath).canonicalFile
             // 通用播放错误只淘汰临时合成缓存，下载区文件继续按下载记录管理。
             if (file.parentFile == File(ttsFolderPath).canonicalFile && file.isFile) {
-                file.delete()
+                TtsCacheFileLock.invalidate(file)
+                TtsCacheFileLock.withLock(file) {
+                    file.delete()
+                    File("${file.absolutePath}.part").delete()
+                    removeTextIndexEntry(file.nameWithoutExtension)
+                }
             }
         }
     }
