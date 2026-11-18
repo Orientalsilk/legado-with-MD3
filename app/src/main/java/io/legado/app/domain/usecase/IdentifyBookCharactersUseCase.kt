@@ -219,10 +219,23 @@ class IdentifyBookCharactersUseCase(
             if (existing?.status == BookCharacterProfile.STATUS_DISABLED) continue
 
             val canonicalName = existing?.name ?: candidateName
+            // Do not steal another character's canonical name or alias just because the
+            // model listed it as a nickname. Existing user-entered aliases are retained;
+            // only newly proposed aliases are filtered against other profiles.
+            val claimedByOthers = profiles.asSequence()
+                .filter { it.id != existing?.id && it.status != BookCharacterProfile.STATUS_DELETED }
+                .flatMap { profile ->
+                    sequenceOf(profile.name) +
+                        GSON.fromJsonArray<String>(profile.aliasesJson).getOrNull().orEmpty().asSequence()
+                }
+                .map(::normalizeIdentityKey)
+                .filter(String::isNotBlank)
+                .toSet()
+            val safeCandidateAliases = (candidateAliases + listOf(candidateName).filter { it != canonicalName })
+                .filter { normalizeIdentityKey(it) !in claimedByOthers }
             val mergedAliases = (
                 GSON.fromJsonArray<String>(existing?.aliasesJson.orEmpty()).getOrNull().orEmpty() +
-                    candidateAliases +
-                    listOf(candidateName).filter { it != canonicalName }
+                    safeCandidateAliases
                 )
                 .map(String::trim)
                 .filter { it.isNotBlank() && normalizeIdentityKey(it) != normalizeIdentityKey(canonicalName) }
