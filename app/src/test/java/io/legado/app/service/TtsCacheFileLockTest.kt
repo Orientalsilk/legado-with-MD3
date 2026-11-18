@@ -93,4 +93,41 @@ class TtsCacheFileLockTest {
             file.delete()
         }
     }
+    @Test
+    fun `new synthesis waits until cache maintenance has finished`() = runBlocking {
+        val file = File.createTempFile("tts-cache-maintenance", ".mp3")
+        val maintenanceEntered = CompletableDeferred<Unit>()
+        val releaseMaintenance = CompletableDeferred<Unit>()
+        val synthesisEntered = CompletableDeferred<Unit>()
+
+        try {
+            val maintenance = async(start = CoroutineStart.UNDISPATCHED) {
+                TtsCacheFileLock.withMaintenanceLock {
+                    TtsCacheFileLock.invalidateAll()
+                    maintenanceEntered.complete(Unit)
+                    releaseMaintenance.await()
+                }
+            }
+            maintenanceEntered.await()
+
+            val synthesis = async(start = CoroutineStart.UNDISPATCHED) {
+                TtsCacheFileLock.withVersionedLock(file) { token ->
+                    synthesisEntered.complete(Unit)
+                    TtsCacheFileLock.isCurrent(token)
+                }
+            }
+
+            // Admission is gated, but the maintenance coroutine itself remains unblocked.
+            assertFalse(synthesisEntered.isCompleted)
+            releaseMaintenance.complete(Unit)
+            maintenance.await()
+
+            assertTrue(synthesis.await())
+            assertTrue(synthesisEntered.isCompleted)
+        } finally {
+            releaseMaintenance.complete(Unit)
+            file.delete()
+        }
+    }
+
 }
