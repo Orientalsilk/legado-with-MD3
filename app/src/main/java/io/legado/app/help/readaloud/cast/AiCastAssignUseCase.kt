@@ -415,14 +415,19 @@ class AiCastAssignUseCase(
     ): CastCharacter {
         val canonicalName = canonicalCastName(name, characters, profiles)
         if (canonicalName != null) {
+            // The official profile ID is authoritative. Prefer its exact cast row before
+            // falling back to a legacy row matched only by name.
+            val profile = profiles.firstOrNull {
+                it.status == BookCharacterProfile.STATUS_ACTIVE && it.name == canonicalName
+            }
+            profile?.let { official ->
+                characters.firstOrNull { it.id == official.id }?.let { return it }
+            }
             characters.firstOrNull { it.name == canonicalName }?.let { return it }
 
             // Character discovery may have created the official profile before the first
             // dialogue assignment. Reuse that profile ID when materializing its cast row;
             // otherwise the profile, dialogue assignments, and voice bindings split apart.
-            val profile = profiles.firstOrNull {
-                it.status == BookCharacterProfile.STATUS_ACTIVE && it.name == canonicalName
-            }
             if (profile != null) {
                 val profilePool = VoicePoolStore.poolNameOrEmpty(profile.voiceAgeBand)
                 val fromProfile = CastCharacter(
