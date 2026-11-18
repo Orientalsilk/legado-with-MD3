@@ -111,6 +111,10 @@ import splitties.systemservices.notificationManager
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicInteger
@@ -1847,10 +1851,20 @@ class HttpReadAloudService : BaseReadAloudService(),
         }
         val target = getSpeakFileAsMd5(name)
         target.parentFile?.mkdirs()
-        val committed = part.renameTo(target) ||
-                runCatching { part.copyTo(target, overwrite = true) }.isSuccess
+        val committed = try {
+            Files.move(part.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+            true
+        } catch (_: AtomicMoveNotSupportedException) {
+            // Both files live in the same cache directory. Fall back to a filesystem move,
+            // never stream-copy into the visible target where playback could read a partial MP3.
+            runCatching {
+                Files.move(part.toPath(), target.toPath(), REPLACE_EXISTING)
+            }.isSuccess
+        } catch (_: IOException) {
+            false
+        }
         FileUtils.delete(part.absolutePath)
-        return committed && target.length() > 0L
+        return committed && target.isFile && target.length() > 0L
     }
 
     /**
