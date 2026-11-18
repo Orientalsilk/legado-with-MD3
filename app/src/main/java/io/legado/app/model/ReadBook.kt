@@ -1865,8 +1865,11 @@ object ReadBook : CoroutineScope by MainScope(), KoinComponent {
             if (book.bookUrl == ReadBook.book?.bookUrl
                 && cList.size > chapterSize
             ) {
-                appDb.bookChapterDao.delByBook(book.bookUrl)
-                appDb.bookChapterDao.insert(*cList.toTypedArray())
+                // 删除与插入放进同一事务，中途失败不会留下 0 章的目录
+                appDb.runInTransaction {
+                    appDb.bookChapterDao.delByBook(book.bookUrl)
+                    appDb.bookChapterDao.insert(*cList.toTypedArray())
+                }
                 saveRead()
                 chapterSize = cList.size
                 simulatedChapterSize = book.simulatedTotalChapterNum()

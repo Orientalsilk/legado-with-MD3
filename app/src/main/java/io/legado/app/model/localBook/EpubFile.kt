@@ -257,10 +257,14 @@ class EpubFile(var book: Book) {
                 /*部分书籍DRM处理后，封面获取异常，待优化*/
                 it.coverImage?.inputStream?.use { input ->
                     val cover = BitmapFactory.decodeStream(input)
-                    val out = FileOutputStream(FileUtils.createFileIfNotExist(book.coverUrl!!))
-                    cover.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                    out.flush()
-                    out.close()
+                    if (cover == null) {
+                        AppLog.putDebug("Epub: 封面无法解码. path: ${book.bookUrl}")
+                        return@use
+                    }
+                    FileOutputStream(FileUtils.createFileIfNotExist(book.coverUrl!!)).use { out ->
+                        cover.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                        out.flush()
+                    }
                 } ?: AppLog.putDebug("Epub: 封面获取为空. path: ${book.bookUrl}")
             }
         } catch (e: Exception) {

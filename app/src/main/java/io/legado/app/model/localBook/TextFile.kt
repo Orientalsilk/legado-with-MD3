@@ -119,7 +119,7 @@ class TextFile(private var book: Book) {
         refreshCharset()
         val start = chapter.start!!
         val end = chapter.end!!
-        if (txtBuffer == null || start > bufferEnd || end < bufferStart) {
+        if (txtBuffer == null || start >= bufferEnd || end <= bufferStart) {
             LocalBook.getBookInputStream(book).use { bis ->
                 bufferStart = txtBufferSize * (start / txtBufferSize)
                 txtBuffer = ByteArray(min(txtBufferSize, bis.available() - bufferStart.toInt()))

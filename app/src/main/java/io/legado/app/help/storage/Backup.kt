@@ -33,6 +33,7 @@ import io.legado.app.utils.normalizeFileName
 import io.legado.app.utils.openOutputStream
 import io.legado.app.utils.outputStream
 import io.legado.app.utils.writeToOutputStream
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -321,27 +322,36 @@ object Backup {
             )
             .filter { it.isFile || it.isDirectory }
             .map(File::getAbsolutePath)
+        // 只清临时包；正式的 backup.zip 要等新包复制成功后才被覆盖，避免压缩失败时旧备份先丢
         FileUtils.delete(zipFilePath)
-        FileUtils.delete(zipFilePath.replace("tmp_", ""))
         val backupFileName = if (backupSettingsGateway.currentSettings.onlyLatestBackup) {
             "backup.zip"
         } else {
             zipFileName
         }
+        // 本地复制失败（目录权限被撤销等）不应跳过 WebDAV 上传，错误留到最后再抛
+        var localCopyError: Exception? = null
         if (ZipUtils.zipFiles(paths, zipFilePath)) {
             if (mode == "both" || mode == "local") {
-                when {
-                    path.isNullOrBlank() -> {
-                        copyBackup(context.getExternalFilesDir(null)!!, backupFileName)
-                    }
+                try {
+                    when {
+                        path.isNullOrBlank() -> {
+                            copyBackup(context.getExternalFilesDir(null)!!, backupFileName)
+                        }
 
-                    path.isContentScheme() -> {
-                        copyBackup(context, path.toUri(), backupFileName)
-                    }
+                        path.isContentScheme() -> {
+                            copyBackup(context, path.toUri(), backupFileName)
+                        }
 
-                    else -> {
-                        copyBackup(File(path), backupFileName)
+                        else -> {
+                            copyBackup(File(path), backupFileName)
+                        }
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    localCopyError = e
+                    AppLog.put("备份到本地失败\n$e", e)
                 }
             }
             if (mode == "both" || mode == "webdav") {
@@ -364,6 +374,7 @@ object Backup {
         }.let {
             AppWebDav.upBgs(it.toTypedArray())
         }
+        localCopyError?.let { throw it }
     }
 
     /**
