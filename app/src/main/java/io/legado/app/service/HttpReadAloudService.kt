@@ -360,6 +360,7 @@ class HttpReadAloudService : BaseReadAloudService(),
     private var speechRate: Int = speechRatePlay + 5
     private var downloadTask: Coroutine<*>? = null
     private var preDownloadJob: Job? = null
+    private var startupCacheSweepJob: Job? = null
     private var playIndexJob: Job? = null
     private var playbackGeneration = 0L
     private var synthesisNeedsRestart = false
@@ -377,8 +378,9 @@ class HttpReadAloudService : BaseReadAloudService(),
         super.onCreate()
         exoPlayer.addListener(this)
         applyCueVoiceEffect(nowSpeak)
-        // 上一次会话没走到 onDestroy 留下的缓存音频在这里清掉，理由见 [sweepBurnAfterReadLeftovers]。
-        Coroutine.async { sweepBurnAfterReadLeftovers() }
+        // 清除上一次异常退出留下的即听即焚缓存。文件合成入口会等待该任务完成，
+        // 避免异步清扫误删本次刚合成的音频。
+        startupCacheSweepJob = lifecycleScope.launch(IO) { sweepBurnAfterReadLeftovers() }
         lifecycleScope.launch {
             readAloudSettingsGateway.settings.collectLatest {
                 readAloudSettings = it
@@ -571,6 +573,8 @@ class HttpReadAloudService : BaseReadAloudService(),
         // 否则服务冷启动时阅读界面会先卡一下（Room 开了 allowMainThreadQueries，不报错只阻塞）
         ReadAloudAudioStore.beginDownload(bookUrl, last - start + 1)
         val task = execute(executeContext = IO) {
+            startupCacheSweepJob?.join()
+            ensureActive()
             val book = appDb.bookDao.getBook(bookUrl)
             if (book == null) {
                 toastOnUi("找不到这本书，听书下载已取消")
@@ -925,11 +929,7 @@ class HttpReadAloudService : BaseReadAloudService(),
     private fun discardInvalidatedSpeakFile(fileName: String, target: File) {
         target.delete()
         File("${target.absolutePath}.part").delete()
-        try {
-            val baseDir = externalCacheDir ?: cacheDir
-            TtsTextIndexStore.remove(File(baseDir, "httpTTS/tts_cache_index.json"), fileName)
-        } catch (_: Exception) {
-        }
+        removeTextIndexEntry(fileName)
     }
 
     private fun downloadAndPlayAudios() {
@@ -939,6 +939,8 @@ class HttpReadAloudService : BaseReadAloudService(),
         val bookUrl = bookSession.book?.bookUrl
         val generation = playbackGeneration
         downloadTask = execute {
+            startupCacheSweepJob?.join()
+            ensureActive()
             downloadTaskActiveLock.withLock {
                 ensureActive()
                 val httpTts = ReadAloud.httpTTS ?: throw NoStackTraceException("tts is null")
@@ -1322,6 +1324,8 @@ class HttpReadAloudService : BaseReadAloudService(),
         val bookUrl = bookSession.book?.bookUrl
         val generation = playbackGeneration
         downloadTask = execute {
+            startupCacheSweepJob?.join()
+            ensureActive()
             downloadTaskActiveLock.withLock {
                 ensureActive()
                 val httpTts = ReadAloud.httpTTS ?: throw NoStackTraceException("tts is null")
@@ -1964,40 +1968,94 @@ class HttpReadAloudService : BaseReadAloudService(),
      * 那里，上一次会话留在 `httpTTS` 里的音频就没人管。这个语义下没有需要保护的正文，起手删干净即可；
      * 保留一段时间的模式不在这里动手，否则当前章的缓存会在开播前删掉，逼出整章重复合成。
      */
-    private fun sweepBurnAfterReadLeftovers() {
-        if (!cacheBurnAfterRead) return
-        FileUtils.listDirsAndFiles(ttsFolderPath)?.forEach {
-            FileUtils.delete(it.absolutePath)
+    private suspend fun sweepBurnAfterReadLeftovers() {
+        TtsCacheFileLock.withMaintenanceLock {
+            if (!cacheBurnAfterRead) return@withMaintenanceLock
+            val dir = File(ttsFolderPath)
+            val files = dir.listFiles()?.toList().orEmpty()
+            TtsCacheFileLock.invalidateAll()
+
+            val cacheNames = files.mapNotNull { file ->
+                when {
+                    file.name.endsWith(".mp3.part") -> file.name.removeSuffix(".mp3.part")
+                    file.name.endsWith(".mp3") -> file.name.removeSuffix(".mp3")
+                    else -> null
+                }
+            }.distinct()
+
+            cacheNames.forEach { name ->
+                val target = File(dir, "$name.mp3")
+                TtsCacheFileLock.withLock(target) {
+                    target.delete()
+                    File(dir, "$name.mp3.part").delete()
+                    removeTextIndexEntry(name)
+                }
+            }
+            files.filterNot { it.name.endsWith(".mp3") || it.name.endsWith(".mp3.part") }
+                .forEach { it.deleteRecursively() }
+            TtsTextIndexStore.delete(File(dir, "tts_cache_index.json"))
         }
     }
 
     /**
-     * 移除缓存文件
-     * 如果时间设置为0，则不再保护当前章节，退出即全删。
+     * 服务结束时按保留时间清理缓存。所有删除均与播放、预合成共用文件锁，
+     * 防止刚完成的合成在清理后重新提交音频或文字索引。
      */
-    private fun removeCacheFile() {
-        val keepTime = readAloudSettings.audioCacheCleanTime * 60 * 1000L
-        // 只有当时间大于0时，才需要保护当前章节。如果为0，说明用户想彻底不留缓存。
-        val protectCurrentChapter = keepTime > 0
-        val titleMd5 = if (protectCurrentChapter) MD5Utils.md5Encode16(readerReadAloudChapter?.title.orEmpty()) else ""
+    private suspend fun removeCacheFile() {
+        TtsCacheFileLock.withMaintenanceLock {
+            val keepTime = readAloudSettings.audioCacheCleanTime * 60 * 1000L
+            val protectCurrentChapter = keepTime > 0
+            val titleMd5 = if (protectCurrentChapter) {
+                MD5Utils.md5Encode16(readerReadAloudChapter?.title.orEmpty())
+            } else ""
+            val dir = File(ttsFolderPath)
+            val files = dir.listFiles()?.toList() ?: return@withMaintenanceLock
+            TtsCacheFileLock.invalidateAll()
+            val now = System.currentTimeMillis()
 
-        FileUtils.listDirsAndFiles(ttsFolderPath)?.forEach {
-            // 无声占位文件不算缓存，任何时候都可以删
-            val isSilentSound = ReadAloudAudioStore.isSilentPlaceholder(it)
+            files.forEach { file ->
+                when {
+                    file.name.endsWith(".mp3.part") -> {
+                        val name = file.name.removeSuffix(".mp3.part")
+                        val target = File(dir, "$name.mp3")
+                        TtsCacheFileLock.invalidate(target)
+                        TtsCacheFileLock.withLock(target) {
+                            File(dir, "$name.mp3.part").delete()
+                        }
+                    }
 
-            // 保留时间为 0 即听即焚；否则保护当前章节，只删过期的
-            val shouldDelete = if (keepTime == 0L) {
-                // 模式：即听即焚 (保留时间0)
-                true
-            } else {
-                // 模式：保留一段时间
-                // 条件：(不是当前章节) 且 (时间过期了)
-                !it.name.startsWith(titleMd5) && (System.currentTimeMillis() - it.lastModified() > keepTime)
+                    file.name.endsWith(".mp3") -> {
+                        val name = file.name.removeSuffix(".mp3")
+                        val isSilentSound = ReadAloudAudioStore.isSilentPlaceholder(file)
+                        val isExpired = keepTime > 0 && !file.name.startsWith(titleMd5) &&
+                            now - file.lastModified() > keepTime
+                        val shouldDelete = keepTime <= 0 || isSilentSound || isExpired
+                        if (shouldDelete) {
+                            val target = File(dir, "$name.mp3")
+                            TtsCacheFileLock.invalidate(target)
+                            TtsCacheFileLock.withLock(target) {
+                                target.delete()
+                                File(dir, "$name.mp3.part").delete()
+                                removeTextIndexEntry(name)
+                            }
+                        }
+                    }
+
+                    keepTime <= 0 -> file.deleteRecursively()
+                }
             }
 
-            if (shouldDelete || isSilentSound) {
-                FileUtils.delete(it.absolutePath)
+            if (keepTime <= 0) {
+                TtsTextIndexStore.delete(File(dir, "tts_cache_index.json"))
             }
+        }
+    }
+
+    private fun removeTextIndexEntry(fileName: String) {
+        try {
+            val baseDir = externalCacheDir ?: cacheDir
+            TtsTextIndexStore.remove(File(baseDir, "httpTTS/tts_cache_index.json"), fileName)
+        } catch (_: Exception) {
         }
     }
 
