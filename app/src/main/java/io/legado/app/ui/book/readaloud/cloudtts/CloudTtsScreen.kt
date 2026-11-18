@@ -915,6 +915,7 @@ private fun CloudTtsEngineEditorContent(
         ?: CloudTtsProviderType.Mimo
     val profile = provider.profile
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val referenceAudioPicker = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
