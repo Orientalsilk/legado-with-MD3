@@ -960,9 +960,11 @@ class HttpReadAloudService : BaseReadAloudService(),
                                     val inputStream = getSpeakStream(
                                         itemHttpTts, speakText, routedVoice, cueEmotion
                                     )
-                                    createSpeakFile(
-                                        fileName, inputStream ?: throw NoStackTraceException("HTTP 引擎未返回当前句的音频")
-                                    )
+                                    val input = inputStream
+                                        ?: throw NoStackTraceException("HTTP 引擎未返回当前句的音频")
+                                    if (!createSpeakFile(fileName, input)) {
+                                        throw NoStackTraceException("HTTP 引擎音频写入缓存失败")
+                                    }
                                 }
                             }
                         }.onFailure {
@@ -1224,12 +1226,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     val inputStream = getSpeakStream(
                         itemHttpTts, speakText, routedVoice, cue?.emotion.orEmpty()
                     )
-                    if (inputStream != null) {
-                        createSpeakFile(fileName, inputStream)
-                        true
-                    } else {
-                        false
-                    }
+                    inputStream?.let { createSpeakFile(fileName, it) } ?: false
                 }
 
                 else -> false
@@ -1892,7 +1889,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         }
     }
 
-    private suspend fun createSpeakFile(name: String, inputStream: InputStream) {
+    private suspend fun createSpeakFile(name: String, inputStream: InputStream): Boolean {
         inputStream.use { input ->
             val part = createSpeakPartFile(name)
             try {
@@ -1906,7 +1903,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     }
                 }
                 currentCoroutineContext().ensureActive()
-                commitSpeakPart(name, part)
+                return commitSpeakPart(name, part)
             } finally {
                 part.delete()
             }
