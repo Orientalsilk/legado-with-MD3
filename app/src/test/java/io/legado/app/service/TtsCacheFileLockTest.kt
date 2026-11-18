@@ -71,6 +71,15 @@ class TtsCacheFileLockTest {
     }
 
     @Test
+    fun `new service session prevents stale cleanup from being current`() {
+        val oldSession = TtsCacheFileLock.beginServiceSession()
+        val newSession = TtsCacheFileLock.beginServiceSession()
+
+        assertFalse(TtsCacheFileLock.isCurrentServiceSession(oldSession))
+        assertTrue(TtsCacheFileLock.isCurrentServiceSession(newSession))
+    }
+
+    @Test
     fun `global clear invalidates all previously captured tokens`() = runBlocking {
         val file = File.createTempFile("tts-cache-clear", ".mp3")
         try {
