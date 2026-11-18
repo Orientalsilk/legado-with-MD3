@@ -1071,10 +1071,10 @@ private fun CloudTtsEngineEditorContent(
                         { update(editor.copy(optionsJson = it)) },
                         "参考音频配置 JSON（referenceAudio）"
                     )
-                    Text(
-                        "填入 {\"referenceAudio\":\"data:audio/mpeg;base64,...\"} 或 WAV Data URL。克隆模型使用非流式请求；参考音频仅保存在本机引擎配置中。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    AppText(
+                        text = "填入 {\"referenceAudio\":\"data:audio/mpeg;base64,...\"} 或 WAV Data URL。克隆模型使用非流式请求；参考音频仅保存在本机引擎配置中。",
+                        style = LegadoTheme.typography.bodyMedium,
+                        color = LegadoTheme.colorScheme.onSurfaceVariant,
                     )
                 }
                 MediumTonalButton(
