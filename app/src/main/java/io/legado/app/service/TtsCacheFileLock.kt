@@ -23,6 +23,7 @@ internal object TtsCacheFileLock {
     private val generationMonitor = Any()
     private val fileGenerations = mutableMapOf<String, Long>()
     private var globalGeneration = 0L
+    private var serviceSessionGeneration = 0L
 
     suspend fun <T> withLock(file: File, block: suspend () -> T): T =
         locks.withLock(file.absoluteFile.path, block)
@@ -43,6 +44,16 @@ internal object TtsCacheFileLock {
             Token(path, globalGeneration, fileGenerations[path] ?: 0L)
         }
         return locks.withLock(path) { block(token) }
+    }
+
+    /** Registers the newest live service instance so stale onDestroy cleanup cannot touch it. */
+    fun beginServiceSession(): Long = synchronized(generationMonitor) {
+        serviceSessionGeneration++
+        serviceSessionGeneration
+    }
+
+    fun isCurrentServiceSession(generation: Long): Boolean = synchronized(generationMonitor) {
+        generation == serviceSessionGeneration
     }
 
     fun isCurrent(token: Token): Boolean = synchronized(generationMonitor) {
