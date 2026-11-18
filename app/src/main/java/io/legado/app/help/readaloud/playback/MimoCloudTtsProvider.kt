@@ -43,28 +43,7 @@ internal class MimoCloudTtsProvider : CloudTtsProvider {
 
         val isVoiceClone = engine.model == VOICE_CLONE_MODEL
         val isVoiceDesign = engine.model == VOICE_DESIGN_MODEL
-        if (isVoiceDesign) {
-            require(request.instructions.isNotBlank()) {
-                "MiMo 音色设计模型需要填写音色描述（音色预设的「指令」）"
-            }
-        }
-        val messages = buildMessages(request)
-        val audio = JSONObject().put(
-            "format",
-            if (isVoiceClone || isVoiceDesign) CLONE_OUTPUT_FORMAT else "pcm16",
-        )
-        when {
-            isVoiceClone -> audio.put("voice", parseReferenceAudio(engine.optionsJson))
-            isVoiceDesign -> Unit // Voice design is described in the user message; it has no voice field.
-            else -> audio.put("voice", request.voiceId)
-        }
-        val body = JSONObject().apply {
-            put("model", engine.model)
-            put("messages", messages)
-            put("audio", audio)
-            // Voice clone/design currently return a completed audio payload, not low-latency chunks.
-            put("stream", !(isVoiceClone || isVoiceDesign))
-        }
+        val body = buildRequestBody(engine, request)
         val baseUrl = engine.baseUrl.ifBlank { DEFAULT_BASE_URL }.trimEnd('/')
         val httpRequest = Request.Builder()
             .url("$baseUrl/chat/completions")
@@ -103,6 +82,35 @@ internal class MimoCloudTtsProvider : CloudTtsProvider {
                 require(bytes.isNotEmpty()) { "MiMo TTS 没有返回音频数据" }
                 CloudTtsAudio(pcm16MonoToWav(bytes, SAMPLE_RATE), "wav", SAMPLE_RATE)
             }
+        }
+    }
+
+    internal fun buildRequestBody(
+        engine: CloudTtsEngine,
+        request: CloudTtsSynthesisRequest,
+    ): JSONObject {
+        val isVoiceClone = engine.model == VOICE_CLONE_MODEL
+        val isVoiceDesign = engine.model == VOICE_DESIGN_MODEL
+        if (isVoiceDesign) {
+            require(request.instructions.isNotBlank()) {
+                "MiMo 音色设计模型需要填写音色描述（音色预设的「指令」）"
+            }
+        }
+        val audio = JSONObject().put(
+            "format",
+            if (isVoiceClone || isVoiceDesign) CLONE_OUTPUT_FORMAT else "pcm16",
+        )
+        when {
+            isVoiceClone -> audio.put("voice", parseReferenceAudio(engine.optionsJson))
+            isVoiceDesign -> Unit
+            else -> audio.put("voice", request.voiceId)
+        }
+        return JSONObject().apply {
+            put("model", engine.model)
+            put("messages", buildMessages(request))
+            put("audio", audio)
+            // Voice clone/design currently return a completed audio payload, not low-latency chunks.
+            put("stream", !(isVoiceClone || isVoiceDesign))
         }
     }
 
