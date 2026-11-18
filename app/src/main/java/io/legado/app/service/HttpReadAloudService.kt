@@ -755,23 +755,33 @@ class HttpReadAloudService : BaseReadAloudService(),
         val cacheFile = getSpeakFileAsMd5(fileName)
         // 下载区复制需要读取一份完整且稳定的源文件；复制与缓存清理共用同一把锁。
         // 播放器仍持有媒体项时不删源文件，避免正在播放/排队播放的 FileDataSource 被截断。
-        val canBurnCache = cacheBurnAfterRead && withContext(Main) {
+        val shouldAttemptCacheBurn = cacheBurnAfterRead && withContext(Main) {
             exoPlayer.mediaItemCount == 0
         }
         suspend fun saveAndMaybeBurn(): File? = TtsCacheFileLock.withLock(cacheFile) {
             val copied = ReadAloudAudioStore.saveFrom(bookUrl, fileName, cacheFile)
-            if (copied != null && canBurnCache) {
-                cacheFile.delete()
-                File("${cacheFile.absolutePath}.part").delete()
-                removeTextIndexEntry(fileName)
+            if (copied != null && shouldAttemptCacheBurn) {
+                // The player may have queued this file while the download copy was running.
+                // Recheck and delete on its application thread so a queued FileDataSource is
+                // never truncated by a stale mediaItemCount snapshot.
+                val burned = withContext(Main) {
+                    if (cacheBurnAfterRead && exoPlayer.mediaItemCount == 0) {
+                        TtsCacheFileLock.invalidate(cacheFile)
+                        cacheFile.delete()
+                        File("${cacheFile.absolutePath}.part").delete()
+                        true
+                    } else {
+                        false
+                    }
+                }
+                if (burned) removeTextIndexEntry(fileName)
             }
             copied
         }
         // Keep synthesis admission closed from invalidation through deletion. Otherwise a
         // new request could capture a fresh generation between invalidate() and file locking.
-        val saved = if (canBurnCache) {
+        val saved = if (shouldAttemptCacheBurn) {
             TtsCacheFileLock.withMaintenanceLock {
-                TtsCacheFileLock.invalidate(cacheFile)
                 saveAndMaybeBurn()
             }
         } else {
