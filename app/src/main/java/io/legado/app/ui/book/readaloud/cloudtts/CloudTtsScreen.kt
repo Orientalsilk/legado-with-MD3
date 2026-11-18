@@ -2,6 +2,7 @@ package io.legado.app.ui.book.readaloud.cloudtts
 
 import android.content.ClipData
 import android.util.Base64
+import java.io.ByteArrayOutputStream
 import android.media.MediaPlayer
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -95,9 +96,11 @@ import org.json.JSONObject
 import io.legado.app.utils.toastOnUi
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CloudTtsScreen(
@@ -915,26 +918,48 @@ private fun CloudTtsEngineEditorContent(
         contract = ActivityResultContracts.OpenDocument(),
     ) { uri ->
         if (uri != null) {
-            runCatching {
-                val mimeType = when (context.contentResolver.getType(uri)?.lowercase()) {
-                    "audio/mpeg", "audio/mp3" -> "audio/mpeg"
-                    "audio/wav", "audio/x-wav", "audio/wave" -> "audio/wav"
-                    else -> error("只支持 MP3 或 WAV 参考音频")
+            scope.launch {
+                runCatching {
+                    val mimeType = when (context.contentResolver.getType(uri)?.lowercase()) {
+                        "audio/mpeg", "audio/mp3" -> "audio/mpeg"
+                        "audio/wav", "audio/x-wav", "audio/wave" -> "audio/wav"
+                        else -> error("只支持 MP3 或 WAV 参考音频")
+                    }
+                    val prefix = "data:$mimeType;base64,"
+                    val maxDataUrlLength = 10 * 1024 * 1024
+                    val maxRawBytes = ((maxDataUrlLength - prefix.length) / 4) * 3
+                    val encoded = withContext(Dispatchers.IO) {
+                        val output = ByteArrayOutputStream()
+                        val input = context.contentResolver.openInputStream(uri)
+                            ?: error("无法读取所选音频文件")
+                        input.use { stream ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            var total = 0
+                            while (true) {
+                                val count = stream.read(buffer)
+                                if (count < 0) break
+                                total += count
+                                require(total <= maxRawBytes) {
+                                    "参考音频编码后可能超过 MiMo 的 10 MB 限制，请选择更短或更小的音频"
+                                }
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                        require(output.size() > 0) { "参考音频文件为空" }
+                        Base64.encodeToString(output.toByteArray(), Base64.NO_WRAP)
+                    }
+                    val dataUrl = prefix + encoded
+                    require(dataUrl.length <= maxDataUrlLength) {
+                        "参考音频编码后超过 MiMo 的 10 MB 限制，请选择更短或更小的音频"
+                    }
+                    val options = JSONObject(editor.optionsJson.ifBlank { "{}" })
+                        .put("referenceAudio", dataUrl)
+                    update(editor.copy(optionsJson = options.toString()))
+                }.onSuccess {
+                    context.toastOnUi("参考音频已载入，保存引擎后生效")
+                }.onFailure {
+                    context.toastOnUi("参考音频导入失败：${it.localizedMessage.orEmpty()}")
                 }
-                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                    ?: error("无法读取所选音频文件")
-                require(bytes.isNotEmpty()) { "参考音频文件为空" }
-                val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
-                val dataUrl = "data:$mimeType;base64,$encoded"
-                require(dataUrl.length <= 10 * 1024 * 1024) {
-                    "参考音频编码后超过 MiMo 的 10 MB 限制，请选择更短或更小的音频"
-                }
-                val options = JSONObject(editor.optionsJson.ifBlank { "{}" })
-                    .put("referenceAudio", dataUrl)
-                update(editor.copy(optionsJson = options.toString()))
-                context.toastOnUi("参考音频已载入，保存引擎后生效")
-            }.onFailure {
-                context.toastOnUi("参考音频导入失败：${it.localizedMessage.orEmpty()}")
             }
         }
     }
