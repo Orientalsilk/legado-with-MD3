@@ -1,0 +1,74 @@
+name: Personal Release
+
+# 自用：手动触发，只构建基础版(core) Release，用自己的签名密钥。
+# 需要在仓库 Settings → Secrets 里添加 PERSONAL_KEYSTORE_B64（与以前相同的密钥，覆盖安装才不会提示签名冲突）。
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare pinned UI forks
+        uses: ./.github/actions/prepare-ui-forks
+
+      - name: Clear 18PlusList.txt
+        run: echo "" > "$GITHUB_WORKSPACE/app/src/main/assets/18PlusList.txt"
+
+      - name: Configure signing
+        env:
+          KEYSTORE_B64: ${{ secrets.PERSONAL_KEYSTORE_B64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 --decode > "$GITHUB_WORKSPACE/app/personal.jks"
+            echo "Using the personal keystore from repository secrets."
+          else
+            echo "::warning::PERSONAL_KEYSTORE_B64 is not set. Using a temporary key: this APK installs, but cannot update over an APK signed with a different key."
+            keytool -genkeypair -keystore "$GITHUB_WORKSPACE/app/personal.jks" -alias legado \
+              -keyalg RSA -keysize 2048 -validity 36500 \
+              -storepass legado-personal -keypass legado-personal -dname "CN=Legado Temporary"
+          fi
+          {
+            echo ""
+            echo "RELEASE_STORE_FILE=personal.jks"
+            echo "RELEASE_STORE_PASSWORD=legado-personal"
+            echo "RELEASE_KEY_ALIAS=legado"
+            echo "RELEASE_KEY_PASSWORD=legado-personal"
+          } >> "$GITHUB_WORKSPACE/gradle.properties"
+
+      - name: Remove Aliyun mirrors (unreliable in CI)
+        run: sed -i '/maven.aliyun.com/d' settings.gradle
+
+      - name: Build release APK
+        run: |
+          # 与上游一致：版本号随提交数递增，保证能覆盖安装
+          export COMMIT_NUMBER=$(git rev-list --count HEAD)
+          chmod +x gradlew
+          bash scripts/run-gradle-with-retry.sh ./gradlew assembleAppCoreRelease --no-configuration-cache
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: legado-md3-personal
+          path: |
+            app/build/outputs/apk/appCore/release/*arm64-v8a*.apk
+            app/build/outputs/apk/appCore/release/*universal*.apk
+          if-no-files-found: error
