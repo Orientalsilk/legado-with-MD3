@@ -758,8 +758,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         val canBurnCache = cacheBurnAfterRead && withContext(Main) {
             exoPlayer.mediaItemCount == 0
         }
-        if (canBurnCache) TtsCacheFileLock.invalidate(cacheFile)
-        val saved = TtsCacheFileLock.withLock(cacheFile) {
+        suspend fun saveAndMaybeBurn(): String? = TtsCacheFileLock.withLock(cacheFile) {
             val copied = ReadAloudAudioStore.saveFrom(bookUrl, fileName, cacheFile)
             if (copied != null && canBurnCache) {
                 cacheFile.delete()
@@ -767,6 +766,16 @@ class HttpReadAloudService : BaseReadAloudService(),
                 removeTextIndexEntry(fileName)
             }
             copied
+        }
+        // Keep synthesis admission closed from invalidation through deletion. Otherwise a
+        // new request could capture a fresh generation between invalidate() and file locking.
+        val saved = if (canBurnCache) {
+            TtsCacheFileLock.withMaintenanceLock {
+                TtsCacheFileLock.invalidate(cacheFile)
+                saveAndMaybeBurn()
+            }
+        } else {
+            saveAndMaybeBurn()
         }
         if (saved == null) {
             // 合成说成功、缓存里却没有可复制的完整文件（被清/被并发删掉）：
@@ -2294,11 +2303,13 @@ class HttpReadAloudService : BaseReadAloudService(),
             val file = File(filePath).canonicalFile
             // 通用播放错误只淘汰临时合成缓存，下载区文件继续按下载记录管理。
             if (file.parentFile == File(ttsFolderPath).canonicalFile && file.isFile) {
-                TtsCacheFileLock.invalidate(file)
-                TtsCacheFileLock.withLock(file) {
-                    file.delete()
-                    File("${file.absolutePath}.part").delete()
-                    removeTextIndexEntry(file.nameWithoutExtension)
+                TtsCacheFileLock.withMaintenanceLock {
+                    TtsCacheFileLock.invalidate(file)
+                    TtsCacheFileLock.withLock(file) {
+                        file.delete()
+                        File("${file.absolutePath}.part").delete()
+                        removeTextIndexEntry(file.nameWithoutExtension)
+                    }
                 }
             }
         } catch (error: CancellationException) {
