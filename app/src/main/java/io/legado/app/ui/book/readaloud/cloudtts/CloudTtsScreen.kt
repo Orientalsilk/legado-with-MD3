@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.util.Base64
 import java.io.ByteArrayOutputStream
 import android.media.MediaPlayer
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -920,10 +921,23 @@ private fun CloudTtsEngineEditorContent(
         if (uri != null) {
             scope.launch {
                 runCatching {
+                    val displayName = context.contentResolver.query(
+                        uri,
+                        arrayOf(OpenableColumns.DISPLAY_NAME),
+                        null,
+                        null,
+                        null,
+                    )?.use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0).orEmpty() else ""
+                    }.orEmpty()
                     val mimeType = when (context.contentResolver.getType(uri)?.lowercase()) {
                         "audio/mpeg", "audio/mp3" -> "audio/mpeg"
                         "audio/wav", "audio/x-wav", "audio/wave" -> "audio/wav"
-                        else -> error("只支持 MP3 或 WAV 参考音频")
+                        else -> when (displayName.substringAfterLast('.', "").lowercase()) {
+                            "mp3" -> "audio/mpeg"
+                            "wav" -> "audio/wav"
+                            else -> error("只支持 MP3 或 WAV 参考音频")
+                        }
                     }
                     val prefix = "data:$mimeType;base64,"
                     val maxDataUrlLength = 10 * 1024 * 1024
