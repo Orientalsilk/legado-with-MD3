@@ -552,6 +552,9 @@ class CloudTtsViewModel(
             val request = CloudTtsSynthesisRequest(
                 text = application.getString(R.string.cloud_tts_connection_test_text),
                 voiceId = voice.id,
+                instructions = if (engine.provider == CloudTtsProviderType.Mimo &&
+                    engine.model == "mimo-v2.5-tts-voicedesign"
+                ) "清晰自然的成年男声，普通话标准，语气平稳。" else "",
             )
             check(synthesizer.synthesize(engine, request, file)) {
                 application.getString(R.string.cloud_tts_no_audio)
