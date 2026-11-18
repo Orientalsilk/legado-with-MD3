@@ -102,4 +102,41 @@ class IdentifyBookCharactersUseCaseTest {
         assertTrue(findUniqueCharacterProfile(unrelatedCandidateName, listOf(profile)) == null)
     }
 
+    @Test
+    fun `character analysis preserves existing voice mapping and user profile text`() {
+        val existing = BookCharacterProfile(
+            id = "p1",
+            bookUrl = "book",
+            name = "林晚",
+            voiceGender = "female",
+            voiceAgeBand = "MultiTTS女青年",
+            personality = "用户确认的性格",
+            summary = "用户手工整理的简介",
+            role = "female_lead",
+        )
+        val candidate = IdentifyBookCharactersUseCase.Candidate(
+            name = "林晚",
+            aliases = listOf("晚晚"),
+            personality = "AI 新分析",
+            summary = "AI 新摘要",
+            evidence = "章节证据",
+            confidence = 0.9f,
+        )
+
+        val merged = mergeCharacterProfile(
+            existing = existing,
+            bookUrl = "book",
+            canonicalName = "林晚",
+            aliases = listOf("晚晚"),
+            candidate = candidate,
+        )
+
+        assertTrue(merged.id == existing.id)
+        assertTrue(merged.voiceGender == "female")
+        assertTrue(merged.voiceAgeBand == "MultiTTS女青年")
+        assertTrue(merged.personality == "用户确认的性格")
+        assertTrue(merged.summary == "用户手工整理的简介")
+        assertTrue(merged.role == "female_lead")
+    }
+
 }
