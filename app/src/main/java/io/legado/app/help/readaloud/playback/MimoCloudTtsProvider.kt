@@ -115,6 +115,12 @@ internal class MimoCloudTtsProvider : CloudTtsProvider {
             referenceAudio.startsWith("data:audio/wav;base64,")) {
             "MiMo 声音克隆需要在引擎「参考音频配置」中填写 MP3/WAV Base64 Data URL"
         }
+        require(referenceAudio.length <= MAX_REFERENCE_AUDIO_DATA_URL_LENGTH) {
+            "MiMo 参考音频 Base64 Data URL 超过 10 MB 限制"
+        }
+        require(referenceAudio.substringAfter(',').isNotBlank()) {
+            "MiMo 参考音频内容不能为空"
+        }
         return referenceAudio
     }
 
@@ -125,6 +131,7 @@ internal class MimoCloudTtsProvider : CloudTtsProvider {
         const val CLONE_VOICE_ID = "mimo_voice_clone"
         const val CLONE_OUTPUT_FORMAT = "wav"
         const val REFERENCE_AUDIO_OPTION = "referenceAudio"
+        const val MAX_REFERENCE_AUDIO_DATA_URL_LENGTH = 10 * 1024 * 1024
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
         val STYLES = listOf("开心", "悲伤", "愤怒", "惊讶", "恐惧", "厌恶", "小声", "平静")
         val BUILT_IN_VOICES = listOf(
