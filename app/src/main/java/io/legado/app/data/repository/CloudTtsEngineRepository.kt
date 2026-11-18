@@ -60,10 +60,13 @@ class CloudTtsEngineRepository(
         }
     }
 
-    override suspend fun delete(engine: CloudTtsEngine) = withContext(Dispatchers.IO) {
-        engineCacheMutex.withLock {
-            dao.delete(engine.toEntity(credentialCipher))
-            engineCache.remove(engine.id)
+    override suspend fun delete(engine: CloudTtsEngine) {
+        withContext(Dispatchers.IO) {
+            engineCacheMutex.withLock {
+                dao.delete(engine.toEntity(credentialCipher))
+                engineCache.remove(engine.id)
+                Unit
+            }
         }
     }
 
