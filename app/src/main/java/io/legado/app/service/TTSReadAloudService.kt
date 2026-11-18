@@ -265,8 +265,13 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
         resetSpeechTracking()
         val interval = ReadConfig.ttsParagraphInterval.toLong()
         // 章节批量入队无法在同一段内等上一片完成，超长段留给逐段路径处理。
-        serialPlayback = interval > 0 ||
-            (!hasSpeechPlaybackQueue && contentList.any { it.length > TextToSpeech.getMaxSpeechInputLength() })
+        serialPlayback = shouldUseSerialTtsPlayback(
+            hasSpeechPlaybackQueue = hasSpeechPlaybackQueue,
+            paragraphIntervalMillis = interval,
+            hasOversizedParagraph = contentList.any { it.length > TextToSpeech.getMaxSpeechInputLength() },
+            paragraphCount = contentList.size,
+            maxPendingUtterances = MAX_PENDING_UTTERANCES,
+        )
         speakJob = execute {
             AppLog.putDebug("TTS_PLAY: nowSpeak=$nowSpeak, isDelay=$isDelay, interval=$interval")
             
@@ -1070,6 +1075,22 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
     }
 
 }
+
+/**
+ * 决定旧版系统 TTS 是否必须逐句提交。
+ *
+ * 旧版整章入队会为每条 utterance 保留偏移映射，超过上限时清空映射会让仍在播放的
+ * 长篇后半段失去「提前收尾后从半句续读」能力。超过上限的章节改为逐句接力，
+ * 让每条回调及时回收映射；带播放队列的路径本身已有有界预取窗口。
+ */
+internal fun shouldUseSerialTtsPlayback(
+    hasSpeechPlaybackQueue: Boolean,
+    paragraphIntervalMillis: Long,
+    hasOversizedParagraph: Boolean,
+    paragraphCount: Int,
+    maxPendingUtterances: Int,
+): Boolean = paragraphIntervalMillis > 0 ||
+    (!hasSpeechPlaybackQueue && (hasOversizedParagraph || paragraphCount > maxPendingUtterances))
 
 /** 一句被引擎提前收尾后最多补念几次：真的念不动的引擎不能陪它转圈。 */
 private const val MAX_RESPEAK_TRIES = 2
