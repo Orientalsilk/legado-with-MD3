@@ -1748,12 +1748,6 @@ class HttpReadAloudService : BaseReadAloudService(),
                         "${CloudTtsRoleInstructionMapper.VERSION}:" +
                         cueRoleType.storageValue
             }
-                        "${CharacterPerformanceInstructionBuilder.VERSION}:" +
-                        "${characterPerformance?.characterId.orEmpty()}:" +
-                        "${characterPerformance?.updatedAt.orZero()}:" +
-                        "${CloudTtsRoleInstructionMapper.VERSION}:" +
-                        cueRoleType.storageValue
-
             else -> httpSourceKey(routedVoice, cueEmotion, httpTts)
         }
     }
