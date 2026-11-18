@@ -778,8 +778,8 @@ class HttpReadAloudService : BaseReadAloudService(),
             }
             copied
         }
-        // Keep synthesis admission closed from invalidation through deletion. Otherwise a
-        // new request could capture a fresh generation between invalidate() and file locking.
+        // Keep synthesis admission closed while copying and conditionally burning the source.
+        // New synthesis must not register a fresh generation during this maintenance operation.
         val saved = if (shouldAttemptCacheBurn) {
             TtsCacheFileLock.withMaintenanceLock {
                 saveAndMaybeBurn()
