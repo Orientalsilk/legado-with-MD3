@@ -1732,9 +1732,22 @@ class HttpReadAloudService : BaseReadAloudService(),
             ReadAloudVoice.ENGINE_SYSTEM ->
                 "system:${routedVoice.id}:${routedVoice.revision}:${routedVoice.engineId}:${routedVoice.speakerId}"
 
-            ReadAloudVoice.ENGINE_CLOUD ->
-                "cloud:${routedVoice.id}:${routedVoice.revision}:" +
+            ReadAloudVoice.ENGINE_CLOUD -> {
+                // Editing the engine can change its model, endpoint or MiMo clone reference
+                // audio without changing the voice preset row. Include the engine revision
+                // so old MP3 files are not reused after those settings change.
+                val engine = appDb.cloudTtsEngineDao.getSync(routedVoice.engineId)
+                val engineRevision = engine?.let {
+                    "${it.provider}:${it.model}:${it.updatedAt}"
+                } ?: "missing"
+                "cloud:${routedVoice.id}:${routedVoice.revision}:$engineRevision:" +
                         "${CloudTtsEmotionMapper.VERSION}:$cueEmotion:" +
+                        "${CharacterPerformanceInstructionBuilder.VERSION}:" +
+                        "${characterPerformance?.characterId.orEmpty()}:" +
+                        "${characterPerformance?.updatedAt.orZero()}:" +
+                        "${CloudTtsRoleInstructionMapper.VERSION}:" +
+                        cueRoleType.storageValue
+            }
                         "${CharacterPerformanceInstructionBuilder.VERSION}:" +
                         "${characterPerformance?.characterId.orEmpty()}:" +
                         "${characterPerformance?.updatedAt.orZero()}:" +
