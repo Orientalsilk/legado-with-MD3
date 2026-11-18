@@ -109,18 +109,14 @@ class TTSReadAloudSpeechWindowServiceTest {
     }
 
     @Test
-    fun submitsOnlyOneCueUntilTheCurrentUtteranceCompletes() {
+    fun prefetchesOnlyCuesWithTheSameEngineState() {
         play("A", "B", "C", "D")
 
-        val first = assertNextSpoken("A")
-        assertTrue(engine.submissions.isEmpty())
-
-        engine.listener.onDone(first.id)
-        shadowOf(Looper.getMainLooper()).idle()
-
+        assertNextSpoken("A")
         assertNextSpoken("B")
+        assertNextSpoken("C")
         assertTrue(engine.submissions.isEmpty())
-        assertEquals(1, service.nowSpeak)
+        assertEquals(0, service.nowSpeak)
     }
 
     private fun play(vararg lines: String) {
