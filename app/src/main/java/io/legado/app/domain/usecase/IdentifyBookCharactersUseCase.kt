@@ -194,26 +194,20 @@ class IdentifyBookCharactersUseCase(
                 .flatMap { it.split('、', '，', ',', '/', '；', ';') }
                 .map(String::trim)
                 .filter(String::isNotBlank)
-            // Resolve identity from the canonical name only. Proposed aliases are
-            // descriptive data, not proof that two characters are the same person.
-            val candidateKeys = setOf(normalizeCharacterIdentityKey(candidateName))
-                .filter(String::isNotBlank)
-                .toSet()
-
-            val exactMatches = profiles.filter {
+            // Resolve from the canonical name only. Proposed aliases are descriptive data,
+            // not proof that two characters are the same person.
+            val existing = findUniqueCharacterProfile(candidateName, profiles)
+            // Null means either no match (create) or an ambiguous alias (skip safely).
+            val ambiguous = profiles.count { profile ->
+                profile.status != BookCharacterProfile.STATUS_DELETED &&
+                    normalizeCharacterIdentityKey(profile.name) != normalizeCharacterIdentityKey(candidateName) &&
+                    GSON.fromJsonArray<String>(profile.aliasesJson).getOrNull().orEmpty()
+                        .any { normalizeCharacterIdentityKey(it) == normalizeCharacterIdentityKey(candidateName) }
+            } > 1 && profiles.none {
                 it.status != BookCharacterProfile.STATUS_DELETED &&
                     normalizeCharacterIdentityKey(it.name) == normalizeCharacterIdentityKey(candidateName)
             }
-            val aliasMatches = if (exactMatches.isNotEmpty()) emptyList() else profiles.filter { profile ->
-                profile.status != BookCharacterProfile.STATUS_DELETED &&
-                    (profile.name.let(::normalizeCharacterIdentityKey) in candidateKeys ||
-                        GSON.fromJsonArray<String>(profile.aliasesJson).getOrNull().orEmpty()
-                            .map(::normalizeCharacterIdentityKey).any { it in candidateKeys })
-            }
-            val matches = if (exactMatches.isNotEmpty()) exactMatches else aliasMatches
-            // Never merge two existing identities based on a shared nickname.
-            if (matches.size > 1) continue
-            val existing = matches.singleOrNull()
+            if (ambiguous) continue
             // A user-disabled character must not be silently resurrected by another AI scan.
             if (existing?.status == BookCharacterProfile.STATUS_DISABLED) continue
 
@@ -275,6 +269,27 @@ class IdentifyBookCharactersUseCase(
         fun defaultPrompt(): String =
             "You identify stable fictional characters from downloaded local chapters. Use read-only tools to list and read cached chapters and inspect existing characters. Return JSON only: {\"characters\":[{\"name\":string,\"aliases\":[string],\"personality\":string,\"summary\":string,\"evidence\":string,\"confidence\":number}]}. Describe only facts supported by the text. Do not infer voice gender, voice age, voice pool, voice identity, or assign any TTS voice. Do not include pronouns, generic titles, or one-off passers-by. Do not create duplicates of existing names or aliases."
     }
+}
+
+
+/**
+ * Match by canonical name first, then by the candidate's own name appearing as an existing alias.
+ * Proposed aliases never participate in identity resolution. Ambiguous aliases return null.
+ */
+internal fun findUniqueCharacterProfile(
+    candidateName: String,
+    profiles: List<BookCharacterProfile>,
+): BookCharacterProfile? {
+    val key = normalizeCharacterIdentityKey(candidateName)
+    if (key.isBlank()) return null
+    val active = profiles.filter { it.status != BookCharacterProfile.STATUS_DELETED }
+    val exact = active.filter { normalizeCharacterIdentityKey(it.name) == key }
+    if (exact.isNotEmpty()) return exact.singleOrNull()
+    val aliases = active.filter { profile ->
+        GSON.fromJsonArray<String>(profile.aliasesJson).getOrNull().orEmpty()
+            .any { normalizeCharacterIdentityKey(it) == key }
+    }
+    return aliases.singleOrNull()
 }
 
 /** Normalize harmless typography differences without collapsing genuinely different names. */
