@@ -37,8 +37,14 @@ class PrepareChapterSpeechPlanUseCase(
         val resolverVersion = if (requestedMode == SpeechAnalysisMode.Rule) {
             ruleVersion
         } else {
-            runCatching { refineSpeechWithAi.resolverVersion(bookUrl, requestedMode, policy) }
-                .getOrDefault(ruleVersion)
+            runCatching {
+                refineSpeechWithAi.resolverVersion(
+                    bookUrl,
+                    requestedMode,
+                    policy,
+                    analysisReasoningLevel,
+                )
+            }.getOrDefault(ruleVersion)
         }
         val effectiveMode = if (isRuleResolverVersion(resolverVersion, policy)) {
             SpeechAnalysisMode.Rule

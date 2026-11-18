@@ -6,6 +6,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -45,17 +46,42 @@ class TtsTextIndexStoreTest {
     }
 
     @Test
-    fun `index keeps the newest two thousand entries`() {
+    fun `identical upsert refreshes recency before oldest entries are evicted`() {
         val file = newIndexFile()
         repeat(2005) { TtsTextIndexStore.upsert(file, "k$it", "t$it") }
+
+        // k5 is the oldest surviving item. An identical write must move it to the newest position.
+        TtsTextIndexStore.upsert(file, "k5", "t5")
+        TtsTextIndexStore.upsert(file, "k2005", "t2005")
 
         val index = TtsTextIndexStore.read(file)
 
         assertEquals(2000, index.size)
-        assertFalse(index.containsKey("k0"))
-        assertFalse(index.containsKey("k4"))
+        assertFalse(index.containsKey("k6"))
         assertEquals("t5", index["k5"])
-        assertEquals("t2004", index["k2004"])
+        assertEquals("t2005", index["k2005"])
+    }
+
+    @Test
+    fun `failed disk commit keeps previous in-memory snapshot`() {
+        val file = newIndexFile()
+        TtsTextIndexStore.upsert(file, "kept", "old")
+        val backup = File(file.parentFile, "tts_cache_index.backup")
+        val committedContent = file.readText()
+        assertTrue(file.renameTo(backup))
+
+        // A non-empty directory at the destination forces the atomic replacement to fail.
+        assertTrue(file.mkdir())
+        File(file, "child").writeText("block replacement")
+        val result = runCatching { TtsTextIndexStore.upsert(file, "not-committed", "new") }
+
+        assertTrue(result.isFailure)
+        assertEquals(committedContent, backup.readText())
+        assertEquals(mapOf("kept" to "old"), TtsTextIndexStore.read(file))
+
+        file.listFiles()?.forEach { it.delete() }
+        assertTrue(file.delete())
+        assertTrue(backup.renameTo(file))
     }
 
     @Test

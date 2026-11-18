@@ -7,6 +7,7 @@ import io.legado.app.domain.model.AiProviderConfig
 import io.legado.app.domain.model.AiReasoningLevel
 import io.legado.app.domain.model.AiTaskPresetConfig
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Test
 
 class RefineSpeechWithAiParamsTest {
@@ -24,6 +25,26 @@ class RefineSpeechWithAiParamsTest {
         val params = speechAnalysisParams(preset(AiReasoningLevel.MEDIUM), AiReasoningLevel.AUTO)
 
         assertEquals(AiReasoningLevel.MEDIUM, params.reasoningLevel)
+    }
+
+    @Test
+    fun `reasoning changes invalidate the AI analysis parameter fingerprint`() {
+        val preset = preset(AiReasoningLevel.MEDIUM)
+
+        assertNotEquals(
+            speechAnalysisParamsFingerprint(preset, AiReasoningLevel.OFF),
+            speechAnalysisParamsFingerprint(preset, AiReasoningLevel.HIGH),
+        )
+    }
+
+    @Test
+    fun `auto and the matching preset level share the same parameter fingerprint`() {
+        val preset = preset(AiReasoningLevel.MEDIUM)
+
+        assertEquals(
+            speechAnalysisParamsFingerprint(preset, AiReasoningLevel.MEDIUM),
+            speechAnalysisParamsFingerprint(preset, AiReasoningLevel.AUTO),
+        )
     }
 
     @Test

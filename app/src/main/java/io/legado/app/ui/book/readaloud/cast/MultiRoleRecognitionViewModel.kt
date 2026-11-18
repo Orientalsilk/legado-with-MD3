@@ -37,17 +37,15 @@ class MultiRoleRecognitionViewModel(
     application: Application,
 ) : BaseViewModel(application) {
 
-    private val _uiState = MutableStateFlow(MultiRoleRecognitionUiState())
+    // SharedPreferences reads are immediate; publish the saved values before the first UI frame.
+    private val initialConfig = CastSyntaxStore.config()
+    private val _uiState = MutableStateFlow(
+        MultiRoleRecognitionUiState(
+            config = initialConfig,
+            preview = CastSyntaxStore.preview(initialConfig),
+        )
+    )
     val uiState = _uiState.asStateFlow()
-
-    init {
-        execute {
-            val config = CastSyntaxStore.config()
-            _uiState.update {
-                it.copy(config = config, preview = CastSyntaxStore.preview(config))
-            }
-        }
-    }
 
     fun onIntent(intent: MultiRoleRecognitionIntent) {
         when (intent) {
@@ -59,21 +57,21 @@ class MultiRoleRecognitionViewModel(
         }
     }
 
+    // Symbol edits are tiny SharedPreferences writes. Keep each read-modify-write synchronous
+    // so two quick confirmations cannot both start from the same stale UI snapshot.
     private fun save(config: CastSyntaxStore.Config) {
-        execute {
-            val error = CastSyntaxStore.save(config)
-            if (error == CastSyntaxStore.ValidationError.NONE) {
-                val saved = CastSyntaxStore.config()
-                _uiState.update {
-                    it.copy(
-                        config = saved,
-                        preview = CastSyntaxStore.preview(saved),
-                        errorRes = 0,
-                    )
-                }
-            } else {
-                _uiState.update { it.copy(errorRes = error.stringRes()) }
+        val error = CastSyntaxStore.save(config)
+        if (error == CastSyntaxStore.ValidationError.NONE) {
+            val saved = CastSyntaxStore.config()
+            _uiState.update {
+                it.copy(
+                    config = saved,
+                    preview = CastSyntaxStore.preview(saved),
+                    errorRes = 0,
+                )
             }
+        } else {
+            _uiState.update { it.copy(errorRes = error.stringRes()) }
         }
     }
 

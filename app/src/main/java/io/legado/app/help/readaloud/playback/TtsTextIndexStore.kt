@@ -31,25 +31,29 @@ internal object TtsTextIndexStore {
     fun upsert(file: File, fileName: String, text: String) {
         if (fileName.isEmpty()) return
         synchronized(monitor) {
-            val index = load(file)
+            // Copy-on-write: a failed disk commit must not leak uncommitted changes
+            // into the in-memory snapshot returned by later reads.
+            val index = LinkedHashMap(load(file))
             val shortText = if (text.length > 200) text.take(200) + "…" else text
-            if (index[fileName] != shortText) {
-                // 删了再放，让刚写过的摘录留在末尾，超限时丢掉的是最旧的。
-                index.remove(fileName)
-                index[fileName] = shortText
-                while (index.size > MAX_ENTRIES) {
-                    val oldest = index.keys.firstOrNull() ?: break
-                    index.remove(oldest)
-                }
-                write(file, index)
+            val wasMostRecent = index.keys.lastOrNull() == fileName
+            val previous = index.remove(fileName)
+            if (previous == shortText && wasMostRecent) return@synchronized
+
+            // Reinsert even when the text is unchanged so repeated synthesis refreshes recency.
+            index[fileName] = shortText
+            while (index.size > MAX_ENTRIES) {
+                val oldest = index.keys.firstOrNull() ?: break
+                index.remove(oldest)
             }
+            write(file, index)
         }
     }
 
     fun remove(file: File, fileName: String) {
         synchronized(monitor) {
-            val index = load(file)
-            if (index.remove(fileName) != null) {
+            val index = LinkedHashMap(load(file))
+            if (index.containsKey(fileName)) {
+                index.remove(fileName)
                 write(file, index)
             }
         }

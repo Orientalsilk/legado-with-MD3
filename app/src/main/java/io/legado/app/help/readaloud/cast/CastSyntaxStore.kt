@@ -89,6 +89,7 @@ object CastSyntaxStore {
     }
 
     /** 校验通过才落库并让缓存失效；非法返回错误码。 */
+    @Synchronized
     fun save(config: Config): ValidationError {
         val error = validate(config)
         if (error != ValidationError.NONE) return error

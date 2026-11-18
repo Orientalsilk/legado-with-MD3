@@ -40,6 +40,7 @@ class RefineSpeechWithAiUseCase(
         bookUrl: String,
         mode: SpeechAnalysisMode,
         policy: ContentSplitPolicy,
+        reasoningLevel: AiReasoningLevel = AiReasoningLevel.AUTO,
     ): String {
         if (mode == SpeechAnalysisMode.Rule) return ruleResolverVersion(policy)
         val preset = resolvePreset()
@@ -48,13 +49,31 @@ class RefineSpeechWithAiUseCase(
             .sortedBy(BookCharacterProfile::id)
             .joinToString("|") { "${it.id}:${it.updatedAt}" }
         val promptHash = MD5Utils.md5Encode(systemPrompt(preset, mode))
+        // Include only non-secret model settings that can change the generated analysis.
+        val modelHash = MD5Utils.md5Encode(
+            GSON.toJson(
+                listOf(
+                    preset.model.id,
+                    preset.model.modelId,
+                    preset.model.provider.id,
+                    preset.model.provider.protocol,
+                    preset.model.provider.baseUrl,
+                    preset.model.contextWindow,
+                    preset.model.maxOutputTokens,
+                    preset.model.capabilities.sorted(),
+                    preset.model.defaultParams,
+                )
+            )
+        )
+        val paramsHash = speechAnalysisParamsFingerprint(preset, reasoningLevel)
         return listOf(
             // 与纯规则分段共用同一前缀，AI 结果才不会被误判成规则模式
             ruleResolverVersion(policy),
             VERSION,
             mode.storageValue,
-            preset.model.id,
+            modelHash,
             promptHash,
+            paramsHash,
             MD5Utils.md5Encode(characterRevision),
         ).joinToString(":")
     }
@@ -419,6 +438,11 @@ class RefineSpeechWithAiUseCase(
  * `reasoning_content` and the strict JSON contract of this task fails. AUTO keeps the presets in
  * charge, mirroring [io.legado.app.domain.usecase.IdentifyBookCharactersUseCase.identifyStream].
  */
+internal fun speechAnalysisParamsFingerprint(
+    preset: AiTaskPresetConfig,
+    reasoningLevel: AiReasoningLevel,
+): String = MD5Utils.md5Encode(GSON.toJson(speechAnalysisParams(preset, reasoningLevel)))
+
 internal fun speechAnalysisParams(
     preset: AiTaskPresetConfig,
     reasoningLevel: AiReasoningLevel,
