@@ -9,6 +9,55 @@ import org.junit.Test
 class TTSReadAloudProgressTest {
 
     @Test
+    fun oversizedLegacyChapterUsesSerialSubmissionBeforeProgressMapCanBeCleared() {
+        assertFalse(
+            shouldUseSerialTtsPlayback(
+                hasSpeechPlaybackQueue = false,
+                paragraphIntervalMillis = 0,
+                hasOversizedParagraph = false,
+                paragraphCount = 256,
+                maxPendingUtterances = 256,
+            )
+        )
+        assertTrue(
+            shouldUseSerialTtsPlayback(
+                hasSpeechPlaybackQueue = false,
+                paragraphIntervalMillis = 0,
+                hasOversizedParagraph = false,
+                paragraphCount = 257,
+                maxPendingUtterances = 256,
+            )
+        )
+        assertTrue(
+            shouldUseSerialTtsPlayback(
+                hasSpeechPlaybackQueue = false,
+                paragraphIntervalMillis = 0,
+                hasOversizedParagraph = true,
+                paragraphCount = 10,
+                maxPendingUtterances = 256,
+            )
+        )
+        assertFalse(
+            shouldUseSerialTtsPlayback(
+                hasSpeechPlaybackQueue = true,
+                paragraphIntervalMillis = 0,
+                hasOversizedParagraph = false,
+                paragraphCount = 10_000,
+                maxPendingUtterances = 256,
+            )
+        )
+        assertTrue(
+            shouldUseSerialTtsPlayback(
+                hasSpeechPlaybackQueue = false,
+                paragraphIntervalMillis = 300,
+                hasOversizedParagraph = false,
+                paragraphCount = 10,
+                maxPendingUtterances = 256,
+            )
+        )
+    }
+
+    @Test
     fun speechDrivenPageNavigationIsMarkedOnlyForItsNavigationBlock() {
         assertFalse(BaseReadAloudService.speechDrivingNavigation)
 
