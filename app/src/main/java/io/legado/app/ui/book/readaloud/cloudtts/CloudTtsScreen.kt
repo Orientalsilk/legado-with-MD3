@@ -1,7 +1,10 @@
 package io.legado.app.ui.book.readaloud.cloudtts
 
 import android.content.ClipData
+import android.util.Base64
 import android.media.MediaPlayer
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -88,6 +91,7 @@ import io.legado.app.ui.widget.components.topbar.GlassTopAppBarDefaults
 import io.legado.app.ui.widget.components.topbar.TopBarActionButton
 import io.legado.app.ui.widget.components.topbar.TopBarNavigationButton
 import io.legado.app.utils.GSON
+import org.json.JSONObject
 import io.legado.app.utils.toastOnUi
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.collections.immutable.toImmutableList
@@ -906,6 +910,39 @@ private fun CloudTtsEngineEditorContent(
     val provider = CloudTtsProviderType.entries.firstOrNull { it.storageValue == editor.provider }
         ?: CloudTtsProviderType.Mimo
     val profile = provider.profile
+    val context = LocalContext.current
+    val referenceAudioPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                val mimeType = when (context.contentResolver.getType(uri)?.lowercase()) {
+                    "audio/mpeg", "audio/mp3" -> "audio/mpeg"
+                    "audio/wav", "audio/x-wav", "audio/wave" -> "audio/wav"
+                    else -> error("只支持 MP3 或 WAV 参考音频")
+                }
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: error("无法读取所选音频文件")
+                require(bytes.isNotEmpty()) { "参考音频文件为空" }
+                val encoded = Base64.encodeToString(bytes, Base64.NO_WRAP)
+                val dataUrl = "data:$mimeType;base64,$encoded"
+                require(dataUrl.length <= 10 * 1024 * 1024) {
+                    "参考音频编码后超过 MiMo 的 10 MB 限制，请选择更短或更小的音频"
+                }
+                val options = JSONObject(editor.optionsJson.ifBlank { "{}" })
+                    .put("referenceAudio", dataUrl)
+                update(editor.copy(optionsJson = options.toString()))
+                context.toastOnUi("参考音频已载入，保存引擎后生效")
+            }.onFailure {
+                context.toastOnUi("参考音频导入失败：${it.localizedMessage.orEmpty()}")
+            }
+        }
+    }
+    val hasReferenceAudio = remember(editor.optionsJson) {
+        runCatching {
+            JSONObject(editor.optionsJson).optString("referenceAudio").isNotBlank()
+        }.getOrDefault(false)
+    }
     LazyColumn {
         item {
             Column(
@@ -1075,13 +1112,36 @@ private fun CloudTtsEngineEditorContent(
                 if (provider == CloudTtsProviderType.Mimo &&
                     editor.model == "mimo-v2.5-tts-voiceclone"
                 ) {
-                    Field(
-                        editor.optionsJson,
-                        { update(editor.copy(optionsJson = it)) },
-                        "参考音频配置 JSON（referenceAudio）"
+                    MediumTonalButton(
+                        onClick = {
+                            referenceAudioPicker.launch(arrayOf("audio/mpeg", "audio/wav", "audio/x-wav"))
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        text = if (hasReferenceAudio) "重新选择参考音频" else "选择 MP3 / WAV 参考音频",
                     )
+                    if (hasReferenceAudio) {
+                        AppText(
+                            text = "参考音频已载入引擎配置",
+                            style = LegadoTheme.typography.bodyMedium,
+                            color = LegadoTheme.colorScheme.primary,
+                        )
+                        MediumTonalButton(
+                            onClick = {
+                                runCatching {
+                                    val options = JSONObject(editor.optionsJson).apply {
+                                        remove("referenceAudio")
+                                    }
+                                    update(editor.copy(optionsJson = options.toString()))
+                                }.onFailure {
+                                    context.toastOnUi("无法清除参考音频：${it.localizedMessage.orEmpty()}")
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            text = "清除参考音频",
+                        )
+                    }
                     AppText(
-                        text = "填入 {\"referenceAudio\":\"data:audio/mpeg;base64,...\"} 或 WAV Data URL。克隆模型使用非流式请求；参考音频仅保存在本机引擎配置中。同一引擎可建多个角色预设，在音色编辑中展开「手动音色 ID」并分别填写 narration、dialogue 等不同 ID。",
+                        text = "从手机文件中选择 MP3 或 WAV。应用会在本机将音频编码并保存在引擎配置中，不会上传到其他存储服务；合成时才发送给 MiMo。建议使用清晰、干净的人声片段。克隆模型使用非流式请求。同一引擎可建立多个角色预设，并分别填写 narration、dialogue 等手动音色 ID。",
                         style = LegadoTheme.typography.bodyMedium,
                         color = LegadoTheme.colorScheme.onSurfaceVariant,
                     )
