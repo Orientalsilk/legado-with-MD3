@@ -44,4 +44,16 @@ class IdentifyBookCharactersUseCaseTest {
         assertFalse(merged.contains("林·晚"))
     }
 
+    @Test
+    fun `saved custom prompts are constrained to character discovery`() {
+        val prompt = enforceCharacterDiscoveryBoundary(
+            "Identify characters and recommend voiceGender and voiceAgeBand."
+        )
+
+        assertTrue(prompt.startsWith("Identify characters"))
+        assertTrue(prompt.contains("Do not infer voice gender"))
+        assertTrue(prompt.contains("Do not assign a TTS voice"))
+        assertTrue(prompt.contains("Voice assignment is a separate workflow"))
+    }
+
 }
