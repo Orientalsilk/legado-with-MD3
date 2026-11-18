@@ -73,7 +73,7 @@ class IdentifyBookCharactersUseCase(
         val preset = identifyPreset
             ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
             ?: error("No AI model configured for character identification")
-        val prompt = identifyPreset?.promptTemplate?.takeIf(String::isNotBlank) ?: defaultPrompt()
+        val prompt = effectivePrompt(identifyPreset?.promptTemplate)
         val now = System.currentTimeMillis()
         val contentHash = MD5Utils.md5Encode(bookUrl)
         val promptHash =
@@ -112,7 +112,7 @@ class IdentifyBookCharactersUseCase(
         val preset = identifyPreset
             ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
             ?: error("No AI model configured for character identification")
-        val prompt = identifyPreset?.promptTemplate?.takeIf(String::isNotBlank) ?: defaultPrompt()
+        val prompt = effectivePrompt(identifyPreset?.promptTemplate)
         val response = StringBuilder()
         aiToolAwareGenerationUseCase.generateStream(
             AiGenerateRequest(
@@ -263,6 +263,16 @@ class IdentifyBookCharactersUseCase(
             if (existing == null) profiles += next
             else profiles[profiles.indexOf(existing)] = next
         }
+    }
+
+    private fun effectivePrompt(customPrompt: String?): String {
+        val base = customPrompt?.takeIf(String::isNotBlank) ?: defaultPrompt()
+        // A saved custom template may predate the separation of character discovery
+        // and voice assignment. Keep its useful instructions, but enforce the boundary.
+        return base + "\n\nNON-NEGOTIABLE CHARACTER-DISCOVERY BOUNDARY: " +
+            "Extract only character identity and novel-supported facts. Do not infer voice gender " +
+            "or voice age, choose a voice pool, select a speaker, assign a TTS voice, or write " +
+            "voiceGender/voiceAgeBand/pool fields. Voice assignment is a separate workflow."
     }
 
     companion object {
