@@ -14,6 +14,7 @@ class MimoCloudTtsProviderTest {
                 id = "mimo",
                 name = "MiMo",
                 provider = CloudTtsProviderType.Mimo,
+                model = "mimo-v2.5-tts",
             ),
         )
 
@@ -22,5 +23,21 @@ class MimoCloudTtsProviderTest {
             voices.map { it.id },
         )
         assertTrue(voices.all { it.styles.isNotEmpty() })
+    }
+
+    @Test
+    fun `exposes a dedicated selectable voice for the voice clone model`() {
+        val voices = MimoCloudTtsProvider().fetchVoices(
+            CloudTtsEngine(
+                id = "mimo-clone",
+                name = "MiMo Clone",
+                provider = CloudTtsProviderType.Mimo,
+                model = "mimo-v2.5-tts-voiceclone",
+            ),
+        )
+
+        assertEquals(1, voices.size)
+        assertEquals("mimo_voice_clone", voices.single().id)
+        assertEquals("MiMo 声音克隆", voices.single().displayName)
     }
 }
