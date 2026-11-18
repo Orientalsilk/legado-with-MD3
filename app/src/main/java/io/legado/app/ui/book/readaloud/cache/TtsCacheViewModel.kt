@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.legado.app.constant.AppLog
 import io.legado.app.help.readaloud.playback.TtsTextIndexStore
+import io.legado.app.service.TtsCacheFileLock
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -156,7 +157,13 @@ class TtsCacheViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             val dir = ttsCacheDir ?: return@launch
             val file = File(dir, "$name.mp3")
-            if (file.exists() && file.delete()) {
+            val part = File(dir, "$name.mp3.part")
+            val deleted = TtsCacheFileLock.withLock(file) {
+                val audioDeleted = !file.exists() || file.delete()
+                part.delete()
+                audioDeleted
+            }
+            if (deleted) {
                 removeFromTextIndex(name)
                 _effects.tryEmit(TtsCacheEffect.ShowToast("已删除"))
                 loadCache()
@@ -170,12 +177,22 @@ class TtsCacheViewModel : ViewModel() {
             val dir = ttsCacheDir
             if (dir != null && dir.exists()) {
                 dir.listFiles()?.forEach { file ->
-                    if (file.name == "tts_cache_index.json") {
-                        TtsTextIndexStore.delete(file)
-                    } else {
+                    if (file.name == "tts_cache_index.json") return@forEach
+                    val cacheName = when {
+                        file.name.endsWith(".mp3.part") -> file.name.removeSuffix(".mp3.part")
+                        file.name.endsWith(".mp3") -> file.name.removeSuffix(".mp3")
+                        else -> {
+                            file.delete()
+                            return@forEach
+                        }
+                    }
+                    val target = File(dir, "$cacheName.mp3")
+                    TtsCacheFileLock.withLock(target) {
                         file.delete()
+                        File(dir, "$cacheName.mp3.part").delete()
                     }
                 }
+                TtsTextIndexStore.delete(File(dir, "tts_cache_index.json"))
             }
             _effects.tryEmit(TtsCacheEffect.ShowToast("缓存已清除"))
             loadCache()
