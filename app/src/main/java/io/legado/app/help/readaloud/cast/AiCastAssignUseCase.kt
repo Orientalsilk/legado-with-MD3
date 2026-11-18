@@ -217,7 +217,7 @@ class AiCastAssignUseCase(
         CastAssignmentStore.migrateLegacyProfiles(book.bookUrl)
         val known = appDb.castCharacterDao.getByBook(book.bookUrl).toMutableList()
         // 档案整本取一次给称呼归并用（别名在这里），逐句再查库会把一趟分配变成几百次查询
-        val profiles = appDb.bookKnowledgeDao.getCharacterProfiles(book.bookUrl, 500)
+        val profiles = appDb.bookKnowledgeDao.getCharacterProfiles(book.bookUrl, 500).toMutableList()
         var bookMemory = appDb.bookCastMemoryDao.get(book.bookUrl)?.memory.orEmpty()
         var previousSpeakers = emptyList<AiCastPayload.Speaker>()
         for (window in windows) {
@@ -269,6 +269,10 @@ class AiCastAssignUseCase(
             if (nextMemory.isNotBlank()) {
                 AiCastPresetStore.setMemory(book.bookUrl, nextMemory, fromAi = true)
                 bookMemory = nextMemory
+                // setMemory mirrors AI-owned aliases into official profiles; refresh the
+                // in-memory snapshot so later chunks can resolve those aliases immediately.
+                profiles.clear()
+                profiles.addAll(appDb.bookKnowledgeDao.getCharacterProfiles(book.bookUrl, 500))
             }
             val speakerOf = writeAssignments(
                 book.bookUrl, chapterIndex, window, parsed.assignments, pools, known,
@@ -350,7 +354,7 @@ class AiCastAssignUseCase(
         pools: List<String>,
         known: MutableList<CastCharacter>,
         thoughtOrdinals: Set<Int>,
-        profiles: List<BookCharacterProfile>,
+        profiles: MutableList<BookCharacterProfile>,
     ): List<AiCastPayload.Speaker> {
         val pending = window.pending.toSet()
         val byOrdinal = assignments
@@ -407,7 +411,7 @@ class AiCastAssignUseCase(
         name: String,
         pool: String,
         characters: List<CastCharacter>,
-        profiles: List<BookCharacterProfile>,
+        profiles: MutableList<BookCharacterProfile>,
     ): CastCharacter {
         val canonicalName = canonicalCastName(name, characters, profiles)
         if (canonicalName != null) {
@@ -447,6 +451,10 @@ class AiCastAssignUseCase(
         CastProfileMirror.ensure(created)
         if (inserted > 0 && profiles.none { it.name == name }) {
             AiCastPresetStore.recordAiCreatedProfile(bookUrl, created.id)
+        }
+        appDb.bookKnowledgeDao.getCharacterProfile(bookUrl, created.id)?.let { profile ->
+            profiles.removeAll { it.id == profile.id || it.name == profile.name }
+            profiles += profile
         }
         return created
     }
