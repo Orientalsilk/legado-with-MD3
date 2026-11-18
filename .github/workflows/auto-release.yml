@@ -1,23 +1,7 @@
 name: Auto Build
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - '**'
-      # - '!**/assets/**'
-      # - '!**.md'
-      - '!**/ISSUE_TEMPLATE/**'
-      - '!**/modules/web/**'
-  pull_request:
-    paths-ignore:
-      - '**/modules/web/**'
-  workflow_run:
-    workflows: [Build Web]
-    branches: [master]
-    types:
-      - completed
+  # 自用 fork：不再每次推送自动构建双版本，改为手动触发（日常构建用 personal-release.yml）
   workflow_dispatch:
   workflow_call:
     inputs:
