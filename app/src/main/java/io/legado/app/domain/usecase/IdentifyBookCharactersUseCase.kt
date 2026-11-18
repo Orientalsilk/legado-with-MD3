@@ -12,7 +12,6 @@ import io.legado.app.domain.model.AiMessageRole
 import io.legado.app.domain.model.AiReasoningLevel
 import io.legado.app.domain.model.AiTaskType
 import io.legado.app.domain.model.AiToolContext
-import io.legado.app.help.readaloud.cast.VoicePoolStore
 import io.legado.app.utils.GSON
 import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.fromJsonArray
@@ -31,8 +30,6 @@ class IdentifyBookCharactersUseCase(
     data class Candidate(
         val name: String,
         val aliases: List<String>,
-        val voiceGender: String,
-        val voiceAgeBand: String,
         val role: String,
         val personality: String,
         val summary: String,
@@ -76,7 +73,7 @@ class IdentifyBookCharactersUseCase(
         val preset = identifyPreset
             ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
             ?: error("No AI model configured for character identification")
-        val prompt = identifyPreset?.promptTemplate?.takeIf(String::isNotBlank) ?: defaultPrompt(VoicePoolStore.enabledPoolNames())
+        val prompt = identifyPreset?.promptTemplate?.takeIf(String::isNotBlank) ?: defaultPrompt()
         val now = System.currentTimeMillis()
         val contentHash = MD5Utils.md5Encode(bookUrl)
         val promptHash =
@@ -159,8 +156,6 @@ class IdentifyBookCharactersUseCase(
             Candidate(
                 name = item.get("name")?.asString?.trim().orEmpty(),
                 aliases = item.getAsJsonArray("aliases")?.map { it.asString.trim() }.orEmpty(),
-                voiceGender = item.get("voiceGender")?.asString ?: "unknown",
-                voiceAgeBand = VoicePoolStore.poolNameOrEmpty(item.get("voiceAgeBand")?.asString),
                 role = item.get("role")?.asString.orEmpty(),
                 personality = item.get("personality")?.asString.orEmpty(),
                 summary = item.get("summary")?.asString.orEmpty(),
@@ -207,8 +202,10 @@ class IdentifyBookCharactersUseCase(
                             .distinct(),
                     ),
                     role = candidate.role,
-                    voiceGender = candidate.voiceGender,
-                    voiceAgeBand = candidate.voiceAgeBand,
+                    // AI character discovery must never assign or overwrite a TTS voice.
+                    // Keep the user's existing MultiTTS voice-pool mapping untouched.
+                    voiceGender = existing?.voiceGender ?: BookCharacterProfile.VOICE_GENDER_UNKNOWN,
+                    voiceAgeBand = existing?.voiceAgeBand ?: BookCharacterProfile.VOICE_AGE_UNKNOWN,
                     personality = candidate.personality,
                     summary = candidate.summary,
                     source = BookCharacterProfile.SOURCE_AI,
@@ -224,13 +221,10 @@ class IdentifyBookCharactersUseCase(
         private const val MIN_CONFIDENCE = 0.65f
 
         /**
-         * 内置默认提示词。`voiceAgeBand` 一栏列的是用户的声音池名，
-         * 人物档案里那一列存的就是池名，模型只能从这里选。
+         * 人物识别只提取小说事实，不做声音性别推断、音色挑选或声音池分配。
+         * MultiTTS 的音色映射由独立的声音分配流程负责。
          */
-        fun defaultPrompt(poolNames: List<String>): String {
-            val pools = poolNames.filter(String::isNotBlank).distinct().joinToString("|")
-                .ifEmpty { "unknown" }
-            return "You identify stable fictional characters from downloaded local chapters. Use read-only tools to list and read cached chapters and inspect existing characters. Return JSON only: {\"characters\":[{\"name\":string,\"aliases\":[string],\"voiceGender\":\"male|female|unknown\",\"voiceAgeBand\":\"$pools\",\"role\":\"male_lead|female_lead|male_supporting|female_supporting|\",\"personality\":string,\"summary\":string,\"evidence\":string,\"confidence\":number}]}. voiceAgeBand is the character's voice pool: copy one of the listed names exactly. Do not include pronouns, generic titles, or one-off passers-by. Use unknown instead of guessing gender. Do not create duplicates of existing names or aliases."
-        }
+        fun defaultPrompt(): String =
+            "You identify stable fictional characters from downloaded local chapters. Use read-only tools to list and read cached chapters and inspect existing characters. Return JSON only: {\"characters\":[{\"name\":string,\"aliases\":[string],\"role\":\"male_lead|female_lead|male_supporting|female_supporting|\",\"personality\":string,\"summary\":string,\"evidence\":string,\"confidence\":number}]}. Describe only facts supported by the text. Do not infer voice gender, voice age, voice pool, voice identity, or assign any TTS voice. Do not include pronouns, generic titles, or one-off passers-by. Do not create duplicates of existing names or aliases."
     }
 }
