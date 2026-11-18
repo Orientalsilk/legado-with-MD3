@@ -196,8 +196,9 @@ class IdentifyBookCharactersUseCase(
                 .flatMap { it.split('、', '，', ',', '/', '；', ';') }
                 .map(String::trim)
                 .filter(String::isNotBlank)
-            val candidateKeys = (candidateAliases + candidateName)
-                .map(::normalizeCharacterIdentityKey)
+            // Resolve identity from the canonical name only. Proposed aliases are
+            // descriptive data, not proof that two characters are the same person.
+            val candidateKeys = setOf(normalizeCharacterIdentityKey(candidateName))
                 .filter(String::isNotBlank)
                 .toSet()
 
