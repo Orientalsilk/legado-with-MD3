@@ -158,12 +158,17 @@ class TtsCacheViewModel : ViewModel() {
             val dir = ttsCacheDir ?: return@launch
             val file = File(dir, "$name.mp3")
             val part = File(dir, "$name.mp3.part")
-            TtsCacheFileLock.invalidate(file)
-            val deleted = TtsCacheFileLock.withLock(file) {
-                val audioDeleted = !file.exists() || file.delete()
-                part.delete()
-                if (audioDeleted) removeFromTextIndex(name)
-                audioDeleted
+            // Gate new synthesis admission across invalidation + deletion. Without the
+            // gate, a request could capture a fresh token after invalidate() but before
+            // delete() acquires the file lock, then recreate the file immediately afterward.
+            val deleted = TtsCacheFileLock.withMaintenanceLock {
+                TtsCacheFileLock.invalidate(file)
+                TtsCacheFileLock.withLock(file) {
+                    val audioDeleted = !file.exists() || file.delete()
+                    part.delete()
+                    if (audioDeleted) removeFromTextIndex(name)
+                    audioDeleted
+                }
             }
             if (deleted) {
                 _effects.tryEmit(TtsCacheEffect.ShowToast("已删除"))
