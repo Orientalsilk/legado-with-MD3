@@ -73,7 +73,7 @@ class IdentifyBookCharactersUseCase(
         val preset = identifyPreset
             ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
             ?: error("No AI model configured for character identification")
-        val prompt = effectivePrompt(identifyPreset?.promptTemplate)
+        val prompt = enforceCharacterDiscoveryBoundary(identifyPreset?.promptTemplate)
         val now = System.currentTimeMillis()
         val contentHash = MD5Utils.md5Encode(bookUrl)
         val promptHash =
@@ -112,7 +112,7 @@ class IdentifyBookCharactersUseCase(
         val preset = identifyPreset
             ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
             ?: error("No AI model configured for character identification")
-        val prompt = effectivePrompt(identifyPreset?.promptTemplate)
+        val prompt = enforceCharacterDiscoveryBoundary(identifyPreset?.promptTemplate)
         val response = StringBuilder()
         aiToolAwareGenerationUseCase.generateStream(
             AiGenerateRequest(
@@ -265,16 +265,6 @@ class IdentifyBookCharactersUseCase(
         }
     }
 
-    private fun effectivePrompt(customPrompt: String?): String {
-        val base = customPrompt?.takeIf(String::isNotBlank) ?: defaultPrompt()
-        // A saved custom template may predate the separation of character discovery
-        // and voice assignment. Keep its useful instructions, but enforce the boundary.
-        return base + "\n\nNON-NEGOTIABLE CHARACTER-DISCOVERY BOUNDARY: " +
-            "Extract only character identity and novel-supported facts. Do not infer voice gender " +
-            "or voice age, choose a voice pool, select a speaker, assign a TTS voice, or write " +
-            "voiceGender/voiceAgeBand/pool fields. Voice assignment is a separate workflow."
-    }
-
     companion object {
         private const val MIN_CONFIDENCE = 0.65f
 
@@ -314,4 +304,14 @@ internal fun mergeCharacterAliases(
                 normalizeCharacterIdentityKey(it) != normalizeCharacterIdentityKey(canonicalName)
         }
         .distinctBy(::normalizeCharacterIdentityKey)
+}
+
+/** Applies even to persisted custom prompts created before the character/voice split. */
+internal fun enforceCharacterDiscoveryBoundary(customPrompt: String?): String {
+    val base = customPrompt?.takeIf(String::isNotBlank)
+        ?: IdentifyBookCharactersUseCase.defaultPrompt()
+    return base + "\n\nNON-NEGOTIABLE CHARACTER-DISCOVERY BOUNDARY: " +
+        "Extract only character identity and novel-supported facts. Do not infer voice gender " +
+        "or voice age, choose a voice pool, select a speaker, assign a TTS voice, or write " +
+        "voiceGender/voiceAgeBand/pool fields. Voice assignment is a separate workflow."
 }
