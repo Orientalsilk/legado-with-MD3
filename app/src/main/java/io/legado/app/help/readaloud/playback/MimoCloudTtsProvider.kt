@@ -16,7 +16,17 @@ import java.io.ByteArrayOutputStream
 internal class MimoCloudTtsProvider : CloudTtsProvider {
     override val type = CloudTtsProviderType.Mimo
 
-    override fun fetchVoices(engine: CloudTtsEngine) = BUILT_IN_VOICES
+    override fun fetchVoices(engine: CloudTtsEngine): List<CloudTtsVoiceDescriptor> =
+        if (engine.model == VOICE_CLONE_MODEL) {
+            listOf(CloudTtsVoiceDescriptor(
+                id = CLONE_VOICE_ID,
+                displayName = "MiMo 声音克隆",
+                locale = "zh-CN",
+                sampleRate = SAMPLE_RATE,
+            ))
+        } else {
+            BUILT_IN_VOICES
+        }
 
     override fun synthesize(
         engine: CloudTtsEngine,
@@ -25,20 +35,25 @@ internal class MimoCloudTtsProvider : CloudTtsProvider {
         require(engine.apiKey.isNotBlank()) { "MiMo API Key 不能为空" }
         require(engine.model.isNotBlank()) { "MiMo 模型不能为空" }
         require(request.text.isNotBlank()) { "朗读文本不能为空" }
-        val expression = request.style.takeIf(String::isNotBlank)?.let { "($it)" }.orEmpty()
-        val messages = JSONArray().apply {
-            request.instructions.takeIf(String::isNotBlank)?.let { instruction ->
-                put(JSONObject().put("role", "user").put("content", instruction))
-            }
-            put(JSONObject()
-                .put("role", "assistant")
-                .put("content", "$expression${request.text}"))
+
+        val isVoiceClone = engine.model == VOICE_CLONE_MODEL
+        val messages = buildMessages(request)
+        val audio = JSONObject().put(
+            "format",
+            if (isVoiceClone) CLONE_OUTPUT_FORMAT else "pcm16",
+        )
+        if (isVoiceClone) {
+            val referenceAudio = parseReferenceAudio(engine.optionsJson)
+            audio.put("voice", referenceAudio)
+        } else {
+            audio.put("voice", request.voiceId)
         }
         val body = JSONObject().apply {
             put("model", engine.model)
             put("messages", messages)
-            put("audio", JSONObject().put("format", "pcm16").put("voice", request.voiceId))
-            put("stream", true)
+            put("audio", audio)
+            // MiMo voice clone currently has no low-latency streaming endpoint.
+            put("stream", !isVoiceClone)
         }
         val baseUrl = engine.baseUrl.ifBlank { DEFAULT_BASE_URL }.trimEnd('/')
         val httpRequest = Request.Builder()
@@ -49,29 +64,67 @@ internal class MimoCloudTtsProvider : CloudTtsProvider {
             .build()
         return cloudTtsHttpClient.newCall(httpRequest).execute().use { response ->
             response.requireCloudTtsSuccessful("MiMo TTS")
-            val pcm = ByteArrayOutputStream()
-            response.body.source().use { source ->
-                while (!source.exhausted()) {
-                    val line = source.readUtf8Line()?.trim().orEmpty()
-                    if (!line.startsWith("data:")) continue
-                    val payload = line.removePrefix("data:").trim()
-                    if (payload == "[DONE]") break
-                    val audio = runCatching {
-                        JSONObject(payload).optJSONArray("choices")?.optJSONObject(0)
-                            ?.optJSONObject("delta")?.optJSONObject("audio")?.optString("data")
-                    }.getOrNull()
-                    if (!audio.isNullOrBlank()) pcm.write(Base64.decode(audio, Base64.DEFAULT))
+            if (isVoiceClone) {
+                val payload = response.body.string()
+                val encoded = JSONObject(payload).optJSONArray("choices")
+                    ?.optJSONObject(0)?.optJSONObject("message")
+                    ?.optJSONObject("audio")?.optString("data")
+                require(!encoded.isNullOrBlank()) { "MiMo 声音克隆没有返回音频数据" }
+                val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                require(bytes.isNotEmpty()) { "MiMo 声音克隆返回了空音频" }
+                CloudTtsAudio(bytes, CLONE_OUTPUT_FORMAT)
+            } else {
+                val pcm = ByteArrayOutputStream()
+                response.body.source().use { source ->
+                    while (!source.exhausted()) {
+                        val line = source.readUtf8Line()?.trim().orEmpty()
+                        if (!line.startsWith("data:")) continue
+                        val payload = line.removePrefix("data:").trim()
+                        if (payload == "[DONE]") break
+                        val encoded = runCatching {
+                            JSONObject(payload).optJSONArray("choices")?.optJSONObject(0)
+                                ?.optJSONObject("delta")?.optJSONObject("audio")?.optString("data")
+                        }.getOrNull()
+                        if (!encoded.isNullOrBlank()) pcm.write(Base64.decode(encoded, Base64.DEFAULT))
+                    }
                 }
+                val bytes = pcm.toByteArray()
+                require(bytes.isNotEmpty()) { "MiMo TTS 没有返回音频数据" }
+                CloudTtsAudio(pcm16MonoToWav(bytes, SAMPLE_RATE), "wav", SAMPLE_RATE)
             }
-            val bytes = pcm.toByteArray()
-            require(bytes.isNotEmpty()) { "MiMo TTS 没有返回音频数据" }
-            CloudTtsAudio(pcm16MonoToWav(bytes, SAMPLE_RATE), "wav", SAMPLE_RATE)
         }
+    }
+
+    private fun buildMessages(request: CloudTtsSynthesisRequest): JSONArray {
+        val expression = request.style.takeIf(String::isNotBlank)?.let { "($it)" }.orEmpty()
+        return JSONArray().apply {
+            request.instructions.takeIf(String::isNotBlank)?.let { instruction ->
+                put(JSONObject().put("role", "user").put("content", instruction))
+            }
+            put(JSONObject()
+                .put("role", "assistant")
+                .put("content", "$expression${request.text}"))
+        }
+    }
+
+    private fun parseReferenceAudio(optionsJson: String): String {
+        val referenceAudio = runCatching {
+            JSONObject(optionsJson).optString(REFERENCE_AUDIO_OPTION)
+        }.getOrDefault("")
+        require(referenceAudio.startsWith("data:audio/mpeg;base64,") ||
+            referenceAudio.startsWith("data:audio/wav;base64,")) {
+            "MiMo 声音克隆需要在引擎「参考音频配置」中填写 MP3/WAV Base64 Data URL"
+        }
+        return referenceAudio
     }
 
     private companion object {
         const val DEFAULT_BASE_URL = "https://api.xiaomimimo.com/v1"
         const val SAMPLE_RATE = 24_000
+        const val VOICE_CLONE_MODEL = "mimo-v2.5-tts-voiceclone"
+        const val CLONE_VOICE_ID = "mimo_voice_clone"
+        const val CLONE_OUTPUT_FORMAT = "wav"
+        const val REFERENCE_AUDIO_OPTION = "referenceAudio"
         val JSON_MEDIA_TYPE = "application/json".toMediaType()
         val STYLES = listOf("开心", "悲伤", "愤怒", "惊讶", "恐惧", "厌恶", "小声", "平静")
         val BUILT_IN_VOICES = listOf(
