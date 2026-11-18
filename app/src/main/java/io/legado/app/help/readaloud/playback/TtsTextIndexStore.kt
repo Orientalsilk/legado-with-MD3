@@ -22,6 +22,8 @@ internal object TtsTextIndexStore {
     private val json = GsonBuilder().disableHtmlEscaping().create()
 
     private var cachedPath: String? = null
+    private var cachedLength: Long = -1L
+    private var cachedLastModified: Long = -1L
     private var cached: LinkedHashMap<String, String>? = null
 
     fun read(file: File): Map<String, String> = synchronized(monitor) {
@@ -65,6 +67,8 @@ internal object TtsTextIndexStore {
             if (cachedPath == file.absolutePath) {
                 cached = null
                 cachedPath = null
+                cachedLength = -1L
+                cachedLastModified = -1L
             }
             file.delete()
         }
@@ -72,7 +76,14 @@ internal object TtsTextIndexStore {
 
     private fun load(file: File): LinkedHashMap<String, String> {
         val path = file.absolutePath
-        cached?.let { if (cachedPath == path) return it }
+        val exists = file.isFile
+        val length = if (exists) file.length() else -1L
+        val lastModified = if (exists) file.lastModified() else -1L
+        cached?.let {
+            if (cachedPath == path && cachedLength == length &&
+                cachedLastModified == lastModified
+            ) return it
+        }
         val loaded = if (!file.isFile || file.length() <= 0L) {
             LinkedHashMap()
         } else {
@@ -83,6 +94,8 @@ internal object TtsTextIndexStore {
         }
         cached = loaded
         cachedPath = path
+        cachedLength = length
+        cachedLastModified = lastModified
         return loaded
     }
 
@@ -100,6 +113,8 @@ internal object TtsTextIndexStore {
             }
             cached = index
             cachedPath = file.absolutePath
+            cachedLength = file.length()
+            cachedLastModified = file.lastModified()
         } finally {
             tmp.delete()
         }
