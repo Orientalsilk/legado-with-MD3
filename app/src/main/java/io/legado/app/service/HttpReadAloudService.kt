@@ -73,6 +73,7 @@ import io.legado.app.help.readaloud.playback.HttpTtsAudioSynthesizer
 import io.legado.app.help.readaloud.playback.HttpTtsEmotionMapper
 import io.legado.app.help.readaloud.playback.ReadAloudAudioStore
 import io.legado.app.help.readaloud.playback.SystemTtsFileSynthesizer
+import io.legado.app.help.readaloud.playback.TtsTextIndexStore
 import io.legado.app.help.readaloud.playback.httpTtsAudioCacheSourceKey
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
@@ -111,7 +112,7 @@ import java.io.File
 import java.io.IOException
 import java.io.InputStream
 import java.net.ConnectException
-import java.net.SocketTimeoutException
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 在线朗读
@@ -1141,7 +1142,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         concurrency: Int,
     ): Boolean = coroutineScope {
         val semaphore = kotlinx.coroutines.sync.Semaphore(concurrency)
-        var failedCount = 0
+        val failedCount = AtomicInteger(0)
         val totalCues = prepared.contentList.size
 
         // 预合成的文本与实时那条一致：标记不进合成，也不进文件名
@@ -1165,7 +1166,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     )
                     if (!success) {
                         createSilentSoundIfMissing(fileName)
-                        failedCount++
+                        failedCount.incrementAndGet()
                     }
                 } finally {
                     semaphore.release()
@@ -1173,7 +1174,7 @@ class HttpReadAloudService : BaseReadAloudService(),
             }
         }.awaitAll()
 
-        failedCount > totalCues / 2
+        failedCount.get() > totalCues / 2
     }
 
     /**
@@ -1260,43 +1261,9 @@ class HttpReadAloudService : BaseReadAloudService(),
         try {
             val baseDir = externalCacheDir ?: cacheDir
             val indexFile = File(baseDir, "httpTTS/tts_cache_index.json")
-            val index = mutableMapOf<String, String>()
-            if (indexFile.exists()) {
-                val json = indexFile.readText()
-                val regex = Regex("\"([^\"]+)\":\"([^\"]*)\"")
-                regex.findAll(json).forEach { match ->
-                    index[match.groupValues[1]] = match.groupValues[2]
-                        .replace("\\n", "\n")
-                        .replace("\\\"", "\"")
-                        .replace("\\\\", "\\")
-                }
-            }
-            val shortText = if (text.length > 200) text.substring(0, 200) + "…" else text
-            index[fileName] = shortText
-            // 限制索引大小，最多保留 2000 条
-            if (index.size > 2000) {
-                val keys = index.keys.toList().takeLast(2000)
-                val trimmed = linkedMapOf<String, String>()
-                keys.forEach { trimmed[it] = index[it]!! }
-                indexFile.writeText(buildIndexJson(trimmed))
-            } else {
-                indexFile.writeText(buildIndexJson(index))
-            }
+            TtsTextIndexStore.upsert(indexFile, fileName, text)
         } catch (_: Exception) {
         }
-    }
-
-    private fun buildIndexJson(index: Map<String, String>): String = buildString {
-        append("{")
-        index.entries.forEachIndexed { i, (key, value) ->
-            if (i > 0) append(",")
-            val escaped = value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-            append("\"$key\":\"$escaped\"")
-        }
-        append("}")
     }
 
     private fun downloadAndPlayAudiosStream() {
@@ -1422,7 +1389,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         downloaderChannel: Channel<Downloader>,
     ): Boolean = coroutineScope {
         val semaphore = kotlinx.coroutines.sync.Semaphore(concurrency)
-        var failedCount = 0
+        val failedCount = AtomicInteger(0)
         val totalCues = prepared.contentList.size
 
         // 预合成的文本与实时那条一致：标记不进合成，也不进文件名
@@ -1446,7 +1413,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                         )
                         if (!success) {
                             createSilentSoundIfMissing(fileName)
-                            failedCount++
+                            failedCount.incrementAndGet()
                         }
                     } else {
                         val speakText = content.readAloudSpeechText()
@@ -1469,7 +1436,7 @@ class HttpReadAloudService : BaseReadAloudService(),
             }
         }.awaitAll()
 
-        failedCount > totalCues / 2
+        failedCount.get() > totalCues / 2
     }
 
     private fun createDataSourceFactory(

@@ -3,6 +3,7 @@ package io.legado.app.ui.book.readaloud.cache
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import io.legado.app.constant.AppLog
+import io.legado.app.help.readaloud.playback.TtsTextIndexStore
 import kotlinx.collections.immutable.persistentListOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -145,19 +146,8 @@ class TtsCacheViewModel : ViewModel() {
     private fun loadTextIndex(): Map<String, String> {
         return try {
             val file = textIndexFile ?: return emptyMap()
-            if (!file.exists()) return emptyMap()
-            val json = file.readText()
-            val map = mutableMapOf<String, String>()
-            // Simple JSON parsing: {"filename":"text",...}
-            val regex = Regex("\"([^\"]+)\":\"([^\"]*)\"")
-            regex.findAll(json).forEach { match ->
-                map[match.groupValues[1]] = match.groupValues[2]
-                    .replace("\\n", "\n")
-                    .replace("\\\"", "\"")
-                    .replace("\\\\", "\\")
-            }
-            map
-        } catch (e: Exception) {
+            TtsTextIndexStore.read(file)
+        } catch (_: Exception) {
             emptyMap()
         }
     }
@@ -179,9 +169,14 @@ class TtsCacheViewModel : ViewModel() {
             _uiState.update { it.copy(activeDialog = null) }
             val dir = ttsCacheDir
             if (dir != null && dir.exists()) {
-                dir.listFiles()?.forEach { it.delete() }
+                dir.listFiles()?.forEach { file ->
+                    if (file.name == "tts_cache_index.json") {
+                        TtsTextIndexStore.delete(file)
+                    } else {
+                        file.delete()
+                    }
+                }
             }
-            textIndexFile?.delete()
             _effects.tryEmit(TtsCacheEffect.ShowToast("缓存已清除"))
             loadCache()
         }
@@ -190,30 +185,7 @@ class TtsCacheViewModel : ViewModel() {
     private fun removeFromTextIndex(filename: String) {
         try {
             val file = textIndexFile ?: return
-            if (!file.exists()) return
-            val index = loadTextIndex().toMutableMap()
-            index.remove(filename)
-            writeTextIndex(index)
-        } catch (_: Exception) {
-        }
-    }
-
-    private fun writeTextIndex(index: Map<String, String>) {
-        try {
-            val file = textIndexFile ?: return
-            val json = buildString {
-                append("{")
-                index.entries.forEachIndexed { i, (key, value) ->
-                    if (i > 0) append(",")
-                    val escaped = value
-                        .replace("\\", "\\\\")
-                        .replace("\"", "\\\"")
-                        .replace("\n", "\\n")
-                    append("\"$key\":\"$escaped\"")
-                }
-                append("}")
-            }
-            file.writeText(json)
+            TtsTextIndexStore.remove(file, filename)
         } catch (_: Exception) {
         }
     }
