@@ -19,6 +19,10 @@ interface CloudTtsEngineDao {
     @Query("select * from cloud_tts_engines where id = :id limit 1")
     suspend fun get(id: String): CloudTtsEngineEntity?
 
+    /** Synchronous snapshot for the reader's cache-key calculation (main-thread queries are enabled). */
+    @Query("select * from cloud_tts_engines where id = :id limit 1")
+    fun getSync(id: String): CloudTtsEngineEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(engine: CloudTtsEngineEntity)
 
