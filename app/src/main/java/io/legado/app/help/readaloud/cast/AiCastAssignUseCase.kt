@@ -682,7 +682,7 @@ internal fun canonicalCastName(
     } ?: return byName?.name
     val resolved = characters.firstOrNull { it.id == anchor.id }
         ?: characters.firstOrNull { it.name == anchor.name }
-    return (resolved ?: byName)?.name
+    return (resolved ?: byName)?.name ?: anchor.name
 }
 
 /**
