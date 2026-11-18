@@ -436,9 +436,9 @@ class AiCastAssignUseCase(
                     CastProfileMirror.ensure(fromProfile)
                     return fromProfile
                 }
-                appDb.castCharacterDao.getByBook(bookUrl).firstOrNull {
+                return appDb.castCharacterDao.getByBook(bookUrl).firstOrNull {
                     it.name == fromProfile.name && it.poolLabel == fromProfile.poolLabel
-                }?.let { return it }
+                } ?: error("Character profile exists but its cast row could not be created")
             }
         }
         val created = CastCharacter(
@@ -448,8 +448,13 @@ class AiCastAssignUseCase(
             poolLabel = pool,
         )
         val inserted = appDb.castCharacterDao.insertIgnore(created)
+        if (inserted <= 0) {
+            return appDb.castCharacterDao.getByBook(bookUrl).firstOrNull {
+                it.name == created.name && it.poolLabel == created.poolLabel
+            } ?: error("Character cast row insertion was ignored without an existing row")
+        }
         CastProfileMirror.ensure(created)
-        if (inserted > 0 && profiles.none { it.name == name }) {
+        if (profiles.none { it.name == name }) {
             AiCastPresetStore.recordAiCreatedProfile(bookUrl, created.id)
         }
         appDb.bookKnowledgeDao.getCharacterProfile(bookUrl, created.id)?.let { profile ->
