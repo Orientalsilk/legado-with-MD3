@@ -409,8 +409,34 @@ class AiCastAssignUseCase(
         characters: List<CastCharacter>,
         profiles: List<BookCharacterProfile>,
     ): CastCharacter {
-        canonicalCastName(name, characters, profiles)
-            ?.let { main -> characters.firstOrNull { it.name == main }?.let { return it } }
+        val canonicalName = canonicalCastName(name, characters, profiles)
+        if (canonicalName != null) {
+            characters.firstOrNull { it.name == canonicalName }?.let { return it }
+
+            // Character discovery may have created the official profile before the first
+            // dialogue assignment. Reuse that profile ID when materializing its cast row;
+            // otherwise the profile, dialogue assignments, and voice bindings split apart.
+            val profile = profiles.firstOrNull {
+                it.status == BookCharacterProfile.STATUS_ACTIVE && it.name == canonicalName
+            }
+            if (profile != null) {
+                val profilePool = VoicePoolStore.poolNameOrEmpty(profile.voiceAgeBand)
+                val fromProfile = CastCharacter(
+                    id = profile.id,
+                    bookUrl = bookUrl,
+                    name = profile.name,
+                    poolLabel = profilePool.ifBlank { pool },
+                )
+                val inserted = appDb.castCharacterDao.insertIgnore(fromProfile)
+                if (inserted > 0) {
+                    CastProfileMirror.ensure(fromProfile)
+                    return fromProfile
+                }
+                appDb.castCharacterDao.getByBook(bookUrl).firstOrNull {
+                    it.name == fromProfile.name && it.poolLabel == fromProfile.poolLabel
+                }?.let { return it }
+            }
+        }
         val created = CastCharacter(
             id = UUID.randomUUID().toString(),
             bookUrl = bookUrl,
