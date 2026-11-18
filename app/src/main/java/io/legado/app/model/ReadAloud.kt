@@ -140,16 +140,14 @@ object ReadAloud {
             // MultiTTS 在这种切换场景下可能让上一句尾音被下一句 setVoice 覆盖。
             val allSystemRoutes = systemRoutes + (coordinatorDefaultEngineId to coordinatorDefaultSpeakerId)
             val needsSessionEffect = hasSessionLayerEffect(bookUrl)
-            if (!shouldUseFileSynthesisCoordinator(
-                    useMultiSpeaker = settings.useMultiSpeaker,
-                    systemRoutes = systemRoutes,
-                    defaultSystemRoute = coordinatorDefaultEngineId to coordinatorDefaultSpeakerId,
-                    hasFileSynthesisVoice = httpVoices.isNotEmpty(),
-                    needsSessionEffect = needsSessionEffect,
-                )
-            ) {
-                return@runCatching null
-            }
+            val shouldUseFileSynthesis = shouldUseFileSynthesisCoordinator(
+                useMultiSpeaker = settings.useMultiSpeaker,
+                systemRoutes = systemRoutes,
+                defaultSystemRoute = coordinatorDefaultEngineId to coordinatorDefaultSpeakerId,
+                hasFileSynthesisVoice = httpVoices.isNotEmpty(),
+                needsSessionEffect = needsSessionEffect,
+            )
+            if (!shouldUseFileSynthesis) return@runCatching null
             AppLog.put(
                 "多角色朗读: 升级文件合成 系统音色 ${allSystemRoutes.size} 路 " +
                     "HTTP/云端音色 ${httpVoices.size} 个 会话级变声=$needsSessionEffect",
