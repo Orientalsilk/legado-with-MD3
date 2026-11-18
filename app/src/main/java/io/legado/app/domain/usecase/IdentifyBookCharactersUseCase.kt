@@ -30,7 +30,6 @@ class IdentifyBookCharactersUseCase(
     data class Candidate(
         val name: String,
         val aliases: List<String>,
-        val role: String,
         val personality: String,
         val summary: String,
         val evidence: String,
@@ -156,7 +155,6 @@ class IdentifyBookCharactersUseCase(
             Candidate(
                 name = item.get("name")?.asString?.trim().orEmpty(),
                 aliases = item.getAsJsonArray("aliases")?.map { it.asString.trim() }.orEmpty(),
-                role = item.get("role")?.asString.orEmpty(),
                 personality = item.get("personality")?.asString.orEmpty(),
                 summary = item.get("summary")?.asString.orEmpty(),
                 evidence = item.get("evidence")?.asString.orEmpty(),
@@ -247,7 +245,7 @@ class IdentifyBookCharactersUseCase(
                 aliasesJson = GSON.toJson(mergedAliases),
                 avatarUri = existing?.avatarUri,
                 tagsJson = existing?.tagsJson ?: "[]",
-                role = existing?.role?.takeIf(String::isNotBlank) ?: candidate.role,
+                role = existing?.role.orEmpty(),
                 // AI discovery never assigns a voice or overwrites an existing mapping.
                 voiceGender = existing?.voiceGender ?: BookCharacterProfile.VOICE_GENDER_UNKNOWN,
                 voiceAgeBand = existing?.voiceAgeBand ?: BookCharacterProfile.VOICE_AGE_UNKNOWN,
@@ -274,7 +272,7 @@ class IdentifyBookCharactersUseCase(
          * MultiTTS 的音色映射由独立的声音分配流程负责。
          */
         fun defaultPrompt(): String =
-            "You identify stable fictional characters from downloaded local chapters. Use read-only tools to list and read cached chapters and inspect existing characters. Return JSON only: {\"characters\":[{\"name\":string,\"aliases\":[string],\"role\":\"male_lead|female_lead|male_supporting|female_supporting|\",\"personality\":string,\"summary\":string,\"evidence\":string,\"confidence\":number}]}. Describe only facts supported by the text. Do not infer voice gender, voice age, voice pool, voice identity, or assign any TTS voice. Do not include pronouns, generic titles, or one-off passers-by. Do not create duplicates of existing names or aliases."
+            "You identify stable fictional characters from downloaded local chapters. Use read-only tools to list and read cached chapters and inspect existing characters. Return JSON only: {\"characters\":[{\"name\":string,\"aliases\":[string],\"personality\":string,\"summary\":string,\"evidence\":string,\"confidence\":number}]}. Describe only facts supported by the text. Do not infer voice gender, voice age, voice pool, voice identity, or assign any TTS voice. Do not include pronouns, generic titles, or one-off passers-by. Do not create duplicates of existing names or aliases."
     }
 }
 
