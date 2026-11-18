@@ -7,14 +7,7 @@ on:
         description: '要构建的分支'
         required: true
         default: 'trae/solo-agent-vhkVM3'
-      product:
-        description: '产品变体：appCore 基础版无本地引擎，appComic 漫画增强版内置本地 OCR/擦除/气泡检测'
-        required: true
-        type: choice
-        options:
-          - appCore
-          - appComic
-        default: appCore
+
 
 permissions:
   contents: write
@@ -23,8 +16,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      PRODUCT: ${{ github.event.inputs.product }}
-      PRODUCT_TAG: "${{ github.event.inputs.product == 'appComic' && 'comic' || 'core' }}"
+      PRODUCT: appCore
+      PRODUCT_TAG: core
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -57,7 +50,7 @@ jobs:
       - name: Build Debug APK
         run: |
           chmod +x gradlew
-          # appCore -> AppCore：Gradle 变体任务名是驼峰形式
+          # 固定构建 Core 基础版，Gradle 任务名为 assembleAppCoreDebug。
           PRODUCT_CAP=$(echo "$PRODUCT" | awk '{print toupper(substr($0,1,1)) substr($0,2)}')
           # 依赖解析命中 Maven Central 限流（HTTP 429）时自动重试一次；真实编译失败不重试。
           bash scripts/run-gradle-with-retry.sh ./gradlew assemble${PRODUCT_CAP}Debug -PenableAbiSplits=false --no-daemon --no-configuration-cache
