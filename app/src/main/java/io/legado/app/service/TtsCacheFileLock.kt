@@ -1,6 +1,8 @@
 package io.legado.app.service
 
 import java.io.File
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * Shared lock and invalidation generation for the HTTP TTS cache.
@@ -17,12 +19,20 @@ internal object TtsCacheFileLock {
     )
 
     private val locks = KeyedMutex()
+    private val maintenanceLock = Mutex()
     private val generationMonitor = Any()
     private val fileGenerations = mutableMapOf<String, Long>()
     private var globalGeneration = 0L
 
     suspend fun <T> withLock(file: File, block: suspend () -> T): T =
         locks.withLock(file.absoluteFile.path, block)
+
+    /**
+     * Serializes cache-wide maintenance (startup sweep / service shutdown cleanup).
+     * Per-file synthesis continues to use keyed locks, so pre-synthesis remains parallel.
+     */
+    suspend fun <T> withMaintenanceLock(block: suspend () -> T): T =
+        maintenanceLock.withLock { block() }
 
     suspend fun <T> withVersionedLock(
         file: File,
