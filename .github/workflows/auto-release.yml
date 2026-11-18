@@ -134,9 +134,8 @@ jobs:
     needs: prepare
     strategy:
       matrix:
-        # 两个产品同时发布：core 基础版（无本地推理）与 comic 漫画增强版（内置 OCR/擦除/气泡检测）。
-        # 两者的 APK 名与 artifact 名都必须带 product 前缀，否则同一 Release 内会互相覆盖。
-        product: [ appCore, appComic ]
+        # 自用版本只发布 Core 基础版。
+        product: [ appCore ]
         type: [ release ]
       fail-fast: false
     runs-on: ubuntu-latest
@@ -380,9 +379,7 @@ jobs:
             fi
             echo "### 下载哪个包"
             echo ""
-            echo "- legado-${VERSIONL}-core-*.apk：基础包，不含本地推理运行时；云端 OCR、AI 识图/翻译可用。"
-            echo "- legado-${VERSIONL}-comic-*.apk：漫画增强版，内置本地 OCR、擦字与气泡检测，体积明显更大。"
-            echo "- 原 full 版用户：产品标记已从 full 改为 comic，应用内更新不会跨包升级，请手动下载一次 comic 包，之后恢复正常更新。"
+            echo "- legado-${VERSIONL}-core-*.apk：Core 基础版，不含本地推理运行时；云端 OCR、AI 识图/翻译可用。"
             echo ""
             echo "### 更新内容"
             echo ""
