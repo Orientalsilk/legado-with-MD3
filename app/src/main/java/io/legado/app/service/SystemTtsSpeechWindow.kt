@@ -5,9 +5,8 @@ import kotlin.math.abs
 /**
  * 引擎里同时排队的句子上限（含正在播的那一句）。
  *
- * 通过 Android TTS 转发的引擎可能在音频真正播完前就回调 onDone。
- * 因此只允许一个未完成 utterance，等当前回调后再以 QUEUE_ADD 提交下一句，
- * 避免预取窗口把「合成完成」误当成「播放完成」并提前推进多句。
+ * 只预取引擎、音色、语速和音高都相同的句子；任何角色音色/引擎状态边界都会停止填充。
+ * 多路系统音色由 ReadAloud 升级到文件合成 + ExoPlayer，直读窗口不跨音色边界。
  */
 internal const val SPEECH_WINDOW_DEPTH = 3
 
