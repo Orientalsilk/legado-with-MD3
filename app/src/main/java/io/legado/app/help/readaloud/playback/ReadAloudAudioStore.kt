@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.update
 import splitties.init.appCtx
 import java.io.File
 import java.io.FileOutputStream
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
@@ -124,8 +125,13 @@ object ReadAloudAudioStore {
                         }
                     }
                     if (part.length() != sourceSize || isSilentPlaceholder(part)) return@runCatching null
-                    // 与图片文件提交保持一致：同目录原子替换，失败保留原文件，不暴露复制中的半文件。
-                    Files.move(part.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+                    // 同目录原子替换；不支持原子移动的文件系统退回普通 move，
+                    // 不直接复制到正式文件，避免播放端读到尚未写完的音频。
+                    try {
+                        Files.move(part.toPath(), target.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+                    } catch (_: AtomicMoveNotSupportedException) {
+                        Files.move(part.toPath(), target.toPath(), REPLACE_EXISTING)
+                    }
                     target
                 } finally {
                     part.delete()
