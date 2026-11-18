@@ -111,12 +111,12 @@ import splitties.systemservices.notificationManager
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.net.ConnectException
+import java.net.SocketTimeoutException
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
-import java.net.ConnectException
-import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
