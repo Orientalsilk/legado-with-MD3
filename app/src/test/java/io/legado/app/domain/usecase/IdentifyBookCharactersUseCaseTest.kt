@@ -17,6 +17,7 @@ class IdentifyBookCharactersUseCaseTest {
         assertTrue(prompt.contains("Do not assign any TTS voice"))
         assertFalse(prompt.contains("\"voiceAgeBand\""))
         assertFalse(prompt.contains("\"voiceGender\""))
+        assertFalse(prompt.contains("male_lead"))
         assertFalse(prompt.contains("voice pool:"))
     }
     @Test
