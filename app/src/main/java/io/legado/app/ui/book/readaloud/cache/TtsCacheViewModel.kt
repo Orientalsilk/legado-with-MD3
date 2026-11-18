@@ -176,26 +176,28 @@ class TtsCacheViewModel : ViewModel() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.update { it.copy(activeDialog = null) }
             val dir = ttsCacheDir
-            if (dir != null && dir.exists()) {
-                // Invalidate jobs already queued on file locks before enumerating visible files.
-                TtsCacheFileLock.invalidateAll()
-                dir.listFiles()?.forEach { file ->
-                    if (file.name == "tts_cache_index.json") return@forEach
-                    val cacheName = when {
-                        file.name.endsWith(".mp3.part") -> file.name.removeSuffix(".mp3.part")
-                        file.name.endsWith(".mp3") -> file.name.removeSuffix(".mp3")
-                        else -> {
+            TtsCacheFileLock.withMaintenanceLock {
+                if (dir != null && dir.exists()) {
+                    // Invalidate jobs already queued on file locks before enumerating visible files.
+                    TtsCacheFileLock.invalidateAll()
+                    dir.listFiles()?.forEach { file ->
+                        if (file.name == "tts_cache_index.json") return@forEach
+                        val cacheName = when {
+                            file.name.endsWith(".mp3.part") -> file.name.removeSuffix(".mp3.part")
+                            file.name.endsWith(".mp3") -> file.name.removeSuffix(".mp3")
+                            else -> {
+                                file.delete()
+                                return@forEach
+                            }
+                        }
+                        val target = File(dir, "$cacheName.mp3")
+                        TtsCacheFileLock.withLock(target) {
                             file.delete()
-                            return@forEach
+                            File(dir, "$cacheName.mp3.part").delete()
                         }
                     }
-                    val target = File(dir, "$cacheName.mp3")
-                    TtsCacheFileLock.withLock(target) {
-                        file.delete()
-                        File(dir, "$cacheName.mp3.part").delete()
-                    }
+                    TtsTextIndexStore.delete(File(dir, "tts_cache_index.json"))
                 }
-                TtsTextIndexStore.delete(File(dir, "tts_cache_index.json"))
             }
             _effects.tryEmit(TtsCacheEffect.ShowToast("缓存已清除"))
             loadCache()
