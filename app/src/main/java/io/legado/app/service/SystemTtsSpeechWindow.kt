@@ -5,10 +5,11 @@ import kotlin.math.abs
 /**
  * 引擎里同时排队的句子上限（含正在播的那一句）。
  *
- * 声音引擎按句缓冲：队列里有下一句，段与段之间才不会出现「等合成」的空档。
- * 深度不必很大——只要下一句的合成比当前句的播放先完成，段间就是无缝的。
+ * 通过 Android TTS 转发的引擎可能在音频真正播完前就回调 onDone。
+ * 因此只允许一个未完成 utterance，等当前回调后再以 QUEUE_ADD 提交下一句，
+ * 避免预取窗口把「合成完成」误当成「播放完成」并提前推进多句。
  */
-internal const val SPEECH_WINDOW_DEPTH = 3
+internal const val SPEECH_WINDOW_DEPTH = 1
 
 /** 语速/音高由 Float 运算得出，相等比较必须留余量。 */
 private const val SPEECH_STATE_EPSILON = 0.001f
