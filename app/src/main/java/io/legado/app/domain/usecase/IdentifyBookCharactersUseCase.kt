@@ -112,7 +112,7 @@ class IdentifyBookCharactersUseCase(
         val preset = identifyPreset
             ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
             ?: error("No AI model configured for character identification")
-        val prompt = identifyPreset?.promptTemplate?.takeIf(String::isNotBlank) ?: defaultPrompt(VoicePoolStore.enabledPoolNames())
+        val prompt = identifyPreset?.promptTemplate?.takeIf(String::isNotBlank) ?: defaultPrompt()
         val response = StringBuilder()
         aiToolAwareGenerationUseCase.generateStream(
             AiGenerateRequest(
