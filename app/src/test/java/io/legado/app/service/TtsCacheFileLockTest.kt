@@ -51,7 +51,7 @@ class TtsCacheFileLockTest {
             }
             ownerEntered.await()
 
-            // UNDISTPATCHED runs the waiter until it suspends on the already-held file mutex,
+            // UNDISPATCHED runs the waiter until it suspends on the already-held file mutex,
             // so its generation token has been captured before invalidation.
             val queued = async(start = CoroutineStart.UNDISPATCHED) {
                 TtsCacheFileLock.withVersionedLock(file) { token ->
