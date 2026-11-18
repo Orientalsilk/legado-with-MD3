@@ -162,10 +162,10 @@ class TtsCacheViewModel : ViewModel() {
             val deleted = TtsCacheFileLock.withLock(file) {
                 val audioDeleted = !file.exists() || file.delete()
                 part.delete()
+                if (audioDeleted) removeFromTextIndex(name)
                 audioDeleted
             }
             if (deleted) {
-                removeFromTextIndex(name)
                 _effects.tryEmit(TtsCacheEffect.ShowToast("已删除"))
                 loadCache()
             }
