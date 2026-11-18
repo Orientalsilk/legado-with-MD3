@@ -12,16 +12,24 @@ import kotlinx.coroutines.sync.withLock
  * the user cleared the cache from recreating the deleted file afterward.
  */
 internal object TtsCacheFileLock {
-    internal data class Token(
+    private class FileGenerationState(
+        var generation: Long = 0L,
+        var users: Int = 0,
+    )
+
+    internal class Token internal constructor(
         val path: String,
         val globalGeneration: Long,
         val fileGeneration: Long,
+        internal val state: Any,
     )
 
     private val locks = KeyedMutex()
     private val maintenanceLock = Mutex()
     private val generationMonitor = Any()
-    private val fileGenerations = mutableMapOf<String, Long>()
+    // States exist only while a versioned lock is active or queued. This avoids
+    // retaining one map entry forever for every cache file ever deleted.
+    private val fileGenerations = mutableMapOf<String, FileGenerationState>()
     private var globalGeneration = 0L
     private var serviceSessionGeneration = 0L
 
@@ -41,9 +49,22 @@ internal object TtsCacheFileLock {
     ): T {
         val path = file.absoluteFile.path
         val token = synchronized(generationMonitor) {
-            Token(path, globalGeneration, fileGenerations[path] ?: 0L)
+            val state = fileGenerations.getOrPut(path) { FileGenerationState() }
+            state.users++
+            Token(path, globalGeneration, state.generation, state)
         }
-        return locks.withLock(path) { block(token) }
+
+        try {
+            return locks.withLock(path) { block(token) }
+        } finally {
+            synchronized(generationMonitor) {
+                val state = token.state as FileGenerationState
+                state.users--
+                if (state.users == 0 && fileGenerations[path] === state) {
+                    fileGenerations.remove(path)
+                }
+            }
+        }
     }
 
     /** Registers the newest live service instance so stale onDestroy cleanup cannot touch it. */
@@ -57,14 +78,17 @@ internal object TtsCacheFileLock {
     }
 
     fun isCurrent(token: Token): Boolean = synchronized(generationMonitor) {
+        val state = token.state as FileGenerationState
         token.globalGeneration == globalGeneration &&
-            token.fileGeneration == (fileGenerations[token.path] ?: 0L)
+            fileGenerations[token.path] === state &&
+            token.fileGeneration == state.generation
     }
 
     fun invalidate(file: File) {
         val path = file.absoluteFile.path
         synchronized(generationMonitor) {
-            fileGenerations[path] = (fileGenerations[path] ?: 0L) + 1L
+            // If there are no owners or queued waiters, there is no old token to invalidate.
+            fileGenerations[path]?.let { it.generation++ }
         }
     }
 
