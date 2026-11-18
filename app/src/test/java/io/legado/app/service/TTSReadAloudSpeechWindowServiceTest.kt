@@ -109,20 +109,18 @@ class TTSReadAloudSpeechWindowServiceTest {
     }
 
     @Test
-    fun refillSkipsAnAheadCueThatFailedDuringSubmission() {
-        engine.failWhileSubmitting = "B"
+    fun submitsOnlyOneCueUntilTheCurrentUtteranceCompletes() {
         play("A", "B", "C", "D")
 
         val first = assertNextSpoken("A")
-        assertNextSpoken("B")
-        assertNextSpoken("C")
-        shadowOf(Looper.getMainLooper()).idle()
-        assertNextSpoken("D")
+        assertTrue(engine.submissions.isEmpty())
 
         engine.listener.onDone(first.id)
         shadowOf(Looper.getMainLooper()).idle()
-        assertEquals(2, service.nowSpeak)
+
+        assertNextSpoken("B")
         assertTrue(engine.submissions.isEmpty())
+        assertEquals(1, service.nowSpeak)
     }
 
     private fun play(vararg lines: String) {
