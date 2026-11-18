@@ -1,5 +1,6 @@
 package io.legado.app.domain.usecase
 
+import io.legado.app.data.entities.BookCharacterProfile
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -55,6 +56,50 @@ class IdentifyBookCharactersUseCaseTest {
         assertTrue(prompt.contains("Do not infer voice gender"))
         assertTrue(prompt.contains("Do not assign a TTS voice"))
         assertTrue(prompt.contains("Voice assignment is a separate workflow"))
+    }
+
+    @Test
+    fun `character profile matches canonical name or a unique existing alias`() {
+        val profile = BookCharacterProfile(
+            id = "p1",
+            bookUrl = "book",
+            name = "李小花",
+            aliasesJson = """["小花","花儿"]""",
+        )
+
+        assertTrue(findUniqueCharacterProfile("李小花", listOf(profile)) == profile)
+        assertTrue(findUniqueCharacterProfile("小花", listOf(profile)) == profile)
+    }
+
+    @Test
+    fun `ambiguous alias does not merge two character profiles`() {
+        val first = BookCharacterProfile(
+            id = "p1",
+            bookUrl = "book",
+            name = "李小花",
+            aliasesJson = """["小花"]""",
+        )
+        val second = BookCharacterProfile(
+            id = "p2",
+            bookUrl = "book",
+            name = "王小花",
+            aliasesJson = """["小花"]""",
+        )
+
+        assertTrue(findUniqueCharacterProfile("小花", listOf(first, second)) == null)
+    }
+
+    @Test
+    fun `proposed aliases are not used as identity evidence`() {
+        val profile = BookCharacterProfile(
+            id = "p1",
+            bookUrl = "book",
+            name = "李小花",
+            aliasesJson = """["小花"]""",
+        )
+        val unrelatedCandidateName = "王明"
+
+        assertTrue(findUniqueCharacterProfile(unrelatedCandidateName, listOf(profile)) == null)
     }
 
 }
