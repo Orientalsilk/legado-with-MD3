@@ -158,6 +158,7 @@ class TtsCacheViewModel : ViewModel() {
             val dir = ttsCacheDir ?: return@launch
             val file = File(dir, "$name.mp3")
             val part = File(dir, "$name.mp3.part")
+            TtsCacheFileLock.invalidate(file)
             val deleted = TtsCacheFileLock.withLock(file) {
                 val audioDeleted = !file.exists() || file.delete()
                 part.delete()
@@ -176,6 +177,8 @@ class TtsCacheViewModel : ViewModel() {
             _uiState.update { it.copy(activeDialog = null) }
             val dir = ttsCacheDir
             if (dir != null && dir.exists()) {
+                // Invalidate jobs already queued on file locks before enumerating visible files.
+                TtsCacheFileLock.invalidateAll()
                 dir.listFiles()?.forEach { file ->
                     if (file.name == "tts_cache_index.json") return@forEach
                     val cacheName = when {
