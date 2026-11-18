@@ -134,20 +134,24 @@ object ReadAloud {
                 } to voices.filter { it.engineType == ReadAloudVoice.ENGINE_SYSTEM }
                     .mapTo(hashSetOf()) { it.engineId to it.speakerId }
             }
-            // 全系统音色也要升级的两个理由：
-            // 1) 变声器的混响/金属感挂在**我们持有播放器的**那条音频会话上，直读时音频是引擎
-            //    自己的 AudioTrack，会话号不给外部应用（试听之所以有效果，就是因为它是文件合成
-            //    + 我们的 ExoPlayer）。
-            // 2) 一句旁白一句角色音地换音色——直读换音色要 setVoice，而这类引擎的 onDone 比耳朵
-            //    提前好几秒（长句是「音频写完」就报完成，缓冲里还剩两三秒没放出去），这一次
-            //    调用正好把上一句的尾巴冲掉：角色长句读到一半跳下一句就是这么来的。文件合成 +
-            //    自己的播放器按真实播放结束翻页，句界不再听引擎的回调。
+            // 默认系统音色也占一条路由。旧判断只统计配音页/角色档案显式绑定的音色，
+            // 漏掉用户在朗读设置里选的默认音色；当书里只有一个角色专属音色时，
+            // 实际是「默认旁白 + 角色音」两路，却被误判成一路，继续走 TTS 直读。
+            // MultiTTS 在这种切换场景下可能让上一句尾音被下一句 setVoice 覆盖。
+            val allSystemRoutes = systemRoutes + (coordinatorDefaultEngineId to coordinatorDefaultSpeakerId)
             val needsSessionEffect = hasSessionLayerEffect(bookUrl)
-            if (httpVoices.isEmpty() && systemRoutes.size < 2 && !needsSessionEffect) {
+            if (!shouldUseFileSynthesisCoordinator(
+                    useMultiSpeaker = settings.useMultiSpeaker,
+                    systemRoutes = systemRoutes,
+                    defaultSystemRoute = coordinatorDefaultEngineId to coordinatorDefaultSpeakerId,
+                    hasFileSynthesisVoice = httpVoices.isNotEmpty(),
+                    needsSessionEffect = needsSessionEffect,
+                )
+            ) {
                 return@runCatching null
             }
             AppLog.put(
-                "多角色朗读: 升级文件合成 系统音色 ${systemRoutes.size} 路 " +
+                "多角色朗读: 升级文件合成 系统音色 ${allSystemRoutes.size} 路 " +
                     "HTTP/云端音色 ${httpVoices.size} 个 会话级变声=$needsSessionEffect",
             )
             httpVoices.firstOrNull { it.engineType == ReadAloudVoice.ENGINE_HTTP }
@@ -437,4 +441,26 @@ object ReadAloud {
         }
     }
 
+}
+
+
+/**
+ * Decide whether multi-speaker playback must use file synthesis + ExoPlayer.
+ *
+ * The selected system TTS voice is a real route even when it has no row in
+ * book_voice_bindings. Count it alongside character-specific system voices:
+ * otherwise a single character voice plus the default narrator is mistaken
+ * for a one-voice book and remains on the direct TTS path.
+ */
+internal fun shouldUseFileSynthesisCoordinator(
+    useMultiSpeaker: Boolean,
+    systemRoutes: Set<Pair<String, String>>,
+    defaultSystemRoute: Pair<String, String>,
+    hasFileSynthesisVoice: Boolean,
+    needsSessionEffect: Boolean,
+): Boolean {
+    if (!useMultiSpeaker) return false
+    return hasFileSynthesisVoice ||
+        (systemRoutes + defaultSystemRoute).size >= 2 ||
+        needsSessionEffect
 }
