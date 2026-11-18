@@ -186,36 +186,76 @@ class IdentifyBookCharactersUseCase(
     }
 
     suspend fun save(bookUrl: String, candidates: List<Candidate>) {
-        candidates.forEach { candidate ->
-            val existing = bookKnowledgeGateway.getCharacterProfile(bookUrl, candidate.name)
-            bookKnowledgeGateway.upsertCharacterProfile(
-                BookCharacterProfile(
-                    id = existing?.id ?: Uuid.random().toString(),
-                    bookUrl = bookUrl,
-                    name = candidate.name,
-                    aliasesJson = GSON.toJson(
-                        (GSON.fromJsonArray<String>(existing?.aliasesJson.orEmpty()).getOrNull()
-                            .orEmpty()
-                                + candidate.aliases)
-                            .map(String::trim)
-                            .filter(String::isNotBlank)
-                            .distinct(),
-                    ),
-                    role = candidate.role,
-                    // AI character discovery must never assign or overwrite a TTS voice.
-                    // Keep the user's existing MultiTTS voice-pool mapping untouched.
-                    voiceGender = existing?.voiceGender ?: BookCharacterProfile.VOICE_GENDER_UNKNOWN,
-                    voiceAgeBand = existing?.voiceAgeBand ?: BookCharacterProfile.VOICE_AGE_UNKNOWN,
-                    personality = candidate.personality,
-                    summary = candidate.summary,
-                    source = BookCharacterProfile.SOURCE_AI,
-                    confidence = candidate.confidence,
-                    createdAt = existing?.createdAt ?: System.currentTimeMillis(),
-                    updatedAt = System.currentTimeMillis(),
+        // Load once: matching every candidate through the DAO would both be slow and
+        // make alias matching depend on a SQL LIKE substring hit.
+        val profiles = bookKnowledgeGateway.getCharacterProfiles(bookUrl, 500).toMutableList()
+        for (candidate in candidates) {
+            val candidateName = candidate.name.trim()
+            if (candidateName.isBlank()) continue
+            val candidateAliases = candidate.aliases
+                .flatMap { it.split('、', '，', ',', '/', '；', ';') }
+                .map(String::trim)
+                .filter(String::isNotBlank)
+            val candidateKeys = (candidateAliases + candidateName)
+                .map(::normalizeIdentityKey)
+                .filter(String::isNotBlank)
+                .toSet()
+
+            val exactMatches = profiles.filter {
+                it.status != BookCharacterProfile.STATUS_DELETED &&
+                    normalizeIdentityKey(it.name) == normalizeIdentityKey(candidateName)
+            }
+            val aliasMatches = if (exactMatches.isNotEmpty()) emptyList() else profiles.filter { profile ->
+                profile.status != BookCharacterProfile.STATUS_DELETED &&
+                    (profile.name.let(::normalizeIdentityKey) in candidateKeys ||
+                        GSON.fromJsonArray<String>(profile.aliasesJson).getOrNull().orEmpty()
+                            .map(::normalizeIdentityKey).any { it in candidateKeys })
+            }
+            val matches = if (exactMatches.isNotEmpty()) exactMatches else aliasMatches
+            // Never merge two existing identities based on a shared nickname.
+            if (matches.size > 1) continue
+            val existing = matches.singleOrNull()
+            // A user-disabled character must not be silently resurrected by another AI scan.
+            if (existing?.status == BookCharacterProfile.STATUS_DISABLED) continue
+
+            val canonicalName = existing?.name ?: candidateName
+            val mergedAliases = (
+                GSON.fromJsonArray<String>(existing?.aliasesJson.orEmpty()).getOrNull().orEmpty() +
+                    candidateAliases +
+                    listOf(candidateName).filter { it != canonicalName }
                 )
+                .map(String::trim)
+                .filter { it.isNotBlank() && normalizeIdentityKey(it) != normalizeIdentityKey(canonicalName) }
+                .distinctBy(::normalizeIdentityKey)
+
+            val next = BookCharacterProfile(
+                id = existing?.id ?: Uuid.random().toString(),
+                bookUrl = bookUrl,
+                name = canonicalName,
+                aliasesJson = GSON.toJson(mergedAliases),
+                avatarUri = existing?.avatarUri,
+                tagsJson = existing?.tagsJson ?: "[]",
+                role = existing?.role?.takeIf(String::isNotBlank) ?: candidate.role,
+                // AI discovery never assigns a voice or overwrites an existing mapping.
+                voiceGender = existing?.voiceGender ?: BookCharacterProfile.VOICE_GENDER_UNKNOWN,
+                voiceAgeBand = existing?.voiceAgeBand ?: BookCharacterProfile.VOICE_AGE_UNKNOWN,
+                personality = existing?.personality?.takeIf(String::isNotBlank) ?: candidate.personality,
+                summary = existing?.summary?.takeIf(String::isNotBlank) ?: candidate.summary,
+                status = existing?.status ?: BookCharacterProfile.STATUS_ACTIVE,
+                source = existing?.source ?: BookCharacterProfile.SOURCE_AI,
+                confidence = maxOf(existing?.confidence ?: 0f, candidate.confidence),
+                schemaVersion = existing?.schemaVersion ?: 1,
+                createdAt = existing?.createdAt ?: System.currentTimeMillis(),
+                updatedAt = System.currentTimeMillis(),
             )
+            bookKnowledgeGateway.upsertCharacterProfile(next)
+            if (existing == null) profiles += next
+            else profiles[profiles.indexOf(existing)] = next
         }
     }
+
+    private fun normalizeIdentityKey(value: String): String =
+        value.trim().lowercase().filterNot { it.isWhitespace() || it in "·•・_—-（）()【】[]「」『』" }
 
     companion object {
         private const val MIN_CONFIDENCE = 0.65f
