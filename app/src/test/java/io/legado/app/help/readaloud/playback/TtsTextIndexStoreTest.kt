@@ -85,6 +85,18 @@ class TtsTextIndexStoreTest {
     }
 
     @Test
+    fun `external cache deletion invalidates the in memory index`() {
+        val file = newIndexFile()
+        TtsTextIndexStore.upsert(file, "stale", "old text")
+
+        assertTrue(file.delete())
+        assertTrue(TtsTextIndexStore.read(file).isEmpty())
+
+        file.writeText("{\"fresh\":\"new text\"}")
+        assertEquals(mapOf("fresh" to "new text"), TtsTextIndexStore.read(file))
+    }
+
+    @Test
     fun `delete forgets the cached copy`() {
         val file = newIndexFile()
         TtsTextIndexStore.upsert(file, "abc", "正文")
