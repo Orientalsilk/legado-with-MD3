@@ -74,7 +74,15 @@ suspend fun Call.await(): Response = suspendCancellableCoroutine { block ->
         }
 
         override fun onResponse(call: Call, response: Response) {
-            block.resume(response)
+            // Cancellation may win after OkHttp delivers the response but before the
+            // continuation accepts it. In that race, nobody owns the response body,
+            // so close it instead of leaking the socket/stream.
+            val token = block.tryResume(response)
+            if (token == null) {
+                response.close()
+            } else {
+                block.completeResume(token)
+            }
         }
     })
 
