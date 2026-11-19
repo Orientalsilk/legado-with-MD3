@@ -22,6 +22,26 @@ class IdentifyBookCharactersUseCaseTest {
         assertFalse(prompt.contains("voice pool:"))
     }
     @Test
+    fun `character response parser ignores null and malformed entries`() {
+        val candidates = parseCharacterCandidates(
+            """{"characters":[null,{"name":"林晚","aliases":[null,"晚晚",3],"personality":null,"summary":"人物摘要","evidence":"章节证据","confidence":0.9}]}"""
+        )
+
+        assertTrue(candidates.size == 1)
+        assertTrue(candidates.single().name == "林晚")
+        assertTrue(candidates.single().aliases == listOf("晚晚"))
+        assertTrue(candidates.single().personality.isEmpty())
+        assertTrue(candidates.single().summary == "人物摘要")
+    }
+
+    @Test
+    fun `character response parser reports missing character array clearly`() {
+        val error = runCatching { parseCharacterCandidates("""{"items":[]}""") }.exceptionOrNull()
+
+        assertTrue(error?.message?.contains("characters array") == true)
+    }
+
+    @Test
     fun `identity key ignores spacing and harmless punctuation`() {
         assertTrue(
             normalizeCharacterIdentityKey("  林·晚  ") ==
