@@ -70,6 +70,7 @@ import io.legado.app.help.readaloud.playback.CloudTtsAudioSynthesizer
 import io.legado.app.help.readaloud.playback.CloudTtsEmotionMapper
 import io.legado.app.help.readaloud.playback.CloudTtsRoleInstructionMapper
 import io.legado.app.help.readaloud.playback.HttpTtsAudioSynthesizer
+import io.legado.app.help.readaloud.playback.shouldRetryHttpTtsStreamOpen
 import io.legado.app.help.readaloud.playback.HttpTtsEmotionMapper
 import io.legado.app.help.readaloud.playback.ReadAloudAudioStore
 import io.legado.app.help.readaloud.playback.SystemTtsFileSynthesizer
@@ -1605,7 +1606,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                 if (e is CancellationException) throw e
                 if (!reportErrors) {
                     val retryable = e is SocketTimeoutException || e is ConnectException
-                    if (retryable && streamRetries < 5) {
+                    if (retryable && shouldRetryHttpTtsStreamOpen(e, streamRetries)) {
                         streamRetries++
                         continue
                     }
