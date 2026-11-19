@@ -25,7 +25,7 @@ class InputStreamDataSource(private val supplier: () -> InputStream) : BaseDataS
 
         try {
             inputStream = supplier.invoke()
-            inputStream!!.skip(dataSpec.position)
+            skipFully(inputStream!!, dataSpec.position)
         } catch (error: Throwable) {
             try { inputStream?.close() } finally { inputStream = null }
             throw error
@@ -36,6 +36,20 @@ class InputStreamDataSource(private val supplier: () -> InputStream) : BaseDataS
         opened = true
         transferStarted(dataSpec)
         return bytesRemaining
+    }
+
+    private fun skipFully(input: InputStream, bytesToSkip: Long) {
+        var remaining = bytesToSkip
+        while (remaining > 0) {
+            val skipped = input.skip(remaining)
+            if (skipped > 0) {
+                remaining -= skipped
+            } else if (input.read() == -1) {
+                throw EOFException()
+            } else {
+                remaining--
+            }
+        }
     }
 
     override fun getUri(): Uri? = dataSpec?.uri
