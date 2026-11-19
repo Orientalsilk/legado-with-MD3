@@ -104,6 +104,7 @@ class AudioPlayService : BaseService(),
     private val otherSettingsGateway get() = GlobalContext.get().get<OtherSettingsGateway>()
     private val aloudSettingsGateway get() = GlobalContext.get().get<ReadAloudSettingsGateway>()
     private val useWakeLock = otherSettingsGateway.currentSettings.audioPlayUseWakeLock
+    private val playbackLockGuard = Any()
     private val wakeLock by lazy {
         powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "legado:AudioPlayService")
             .apply {
@@ -116,6 +117,25 @@ class AudioPlayService : BaseService(),
             setReferenceCounted(false)
         }
     }
+
+    private fun acquirePlaybackLocks() {
+        synchronized(playbackLockGuard) {
+            if (useWakeLock) {
+                if (!wakeLock.isHeld) wakeLock.acquire()
+                wifiLock?.let { if (!it.isHeld) it.acquire() }
+            }
+        }
+    }
+
+    private fun releasePlaybackLocks() {
+        synchronized(playbackLockGuard) {
+            if (useWakeLock) {
+                if (wakeLock.isHeld) wakeLock.release()
+                wifiLock?.let { if (it.isHeld) it.release() }
+            }
+        }
+    }
+
     private val mFocusRequest: AudioFocusRequestCompat by lazy {
         MediaHelp.buildAudioFocusRequestCompat(this)
     }
@@ -219,10 +239,7 @@ class AudioPlayService : BaseService(),
         capsuleOverlayWindow?.close()
         capsuleOverlayWindow = null
         super.onDestroy()
-        if (useWakeLock) {
-            wakeLock.release()
-            wifiLock?.release()
-        }
+        releasePlaybackLocks()
         isRun = false
         abandonFocus()
         exoPlayer.release()
@@ -249,10 +266,7 @@ class AudioPlayService : BaseService(),
             AudioPlay.upLoading(false)
             return
         }
-        if (useWakeLock) {
-            wakeLock.acquire()
-            wifiLock?.acquire()
-        }
+        acquirePlaybackLocks()
         execute(context = Main) {
             AudioPlay.status = Status.STOP
             postEvent(EventBus.AUDIO_STATE, Status.STOP)
@@ -282,10 +296,7 @@ class AudioPlayService : BaseService(),
      * 暂停播放
      */
     private fun pause(abandonFocus: Boolean = true) {
-        if (useWakeLock) {
-            wakeLock.release()
-            wifiLock?.release()
-        }
+        releasePlaybackLocks()
         try {
             pause = true
             if (abandonFocus) {
@@ -308,10 +319,7 @@ class AudioPlayService : BaseService(),
      */
     @SuppressLint("WakelockTimeout")
     private fun resume() {
-        if (useWakeLock) {
-            wakeLock.acquire()
-            wifiLock?.acquire()
-        }
+        acquirePlaybackLocks()
         try {
             pause = false
             if (url.isEmpty()) {
@@ -413,10 +421,7 @@ class AudioPlayService : BaseService(),
         super.onPlayerError(error)
         pause = true
         needResumeOnAudioFocusGain = false
-        if (useWakeLock) {
-            wakeLock.release()
-            wifiLock?.release()
-        }
+        releasePlaybackLocks()
         abandonFocus()
         AudioPlay.status = Status.STOP
         postEvent(EventBus.AUDIO_STATE, Status.STOP)
