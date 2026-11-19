@@ -2486,6 +2486,11 @@ class ReadBookController(
         viewModel.markInitFinished()
         handler.post {
             viewModel.readAloudProgress.value?.let(::updateReadAloudProgress)
+            // 首屏渲染完成兜底触发一次；与 readerChapterInputChanged 共用持久化幂等账本。
+            ReadBook.readerChapterInputWindow.current
+                ?.chapter
+                ?.takeIf { it.index == ReadBook.durChapterIndex }
+                ?.let(viewModel::onReaderChapterReady)
             onStartContentLoadFinish?.invoke()
         }
     }
