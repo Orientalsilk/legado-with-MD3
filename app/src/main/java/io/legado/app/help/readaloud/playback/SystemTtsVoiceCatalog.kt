@@ -14,7 +14,6 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.util.Locale
 import kotlin.coroutines.resume
 
 class SystemTtsVoiceCatalog(context: Context) {
@@ -120,18 +119,3 @@ class SystemTtsVoiceCatalog(context: Context) {
         fun engineId(sourceId: String): String = "system:$sourceId"
     }
 }
-
-
-/**
- * MultiTTS 等转发引擎可能因 Binder 回包过大而无法枚举完整 Voice 列表。
- * 导入的音色已经保存了引擎认可的 speakerId；setVoice 实际按 name 路由，
- * 因此目录缺失时可用同名轻量描述继续尝试，而不是直接退回默认音色。
- */
-internal fun syntheticSystemTtsVoice(name: String): Voice = Voice(
-    name,
-    Locale.getDefault(),
-    Voice.QUALITY_NORMAL,
-    Voice.LATENCY_NORMAL,
-    false,
-    emptySet(),
-)
