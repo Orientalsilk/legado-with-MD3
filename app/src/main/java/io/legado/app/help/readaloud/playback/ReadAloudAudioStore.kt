@@ -16,6 +16,7 @@ import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 听书音频的下载区。
@@ -56,6 +57,7 @@ object ReadAloudAudioStore {
         val sentenceTotal: Int = 0,
         val sentenceDone: Int = 0,
         val failed: Int = 0,
+        val generation: Long = 0,
     ) {
         val chapterFraction: Float
             get() = if (chapterTotal <= 0) 0f else chapterDone.toFloat() / chapterTotal
@@ -63,16 +65,20 @@ object ReadAloudAudioStore {
             get() = if (sentenceTotal <= 0) 0f else sentenceDone.toFloat() / sentenceTotal
     }
 
+    private val generationCounter = AtomicLong(0)
     private val _progress = MutableStateFlow(Progress())
     val progress: StateFlow<Progress> = _progress
 
     /** 开一批下载：只写内存状态，界面点下按钮立刻就能看到「进行中」。 */
-    fun beginDownload(bookUrl: String, chapterTotal: Int) {
+    fun beginDownload(bookUrl: String, chapterTotal: Int): Long {
+        val generation = generationCounter.incrementAndGet()
         _progress.value = Progress(
             running = true,
             bookUrl = bookUrl,
             chapterTotal = chapterTotal.coerceAtLeast(1),
+            generation = generation,
         )
+        return generation
     }
 
     /**
@@ -85,8 +91,21 @@ object ReadAloudAudioStore {
         _progress.update(transform)
     }
 
+    /** 旧任务的迟到更新只能作用于自己那一代，不能污染新下载的 UI 状态。 */
+    fun updateProgress(generation: Long, transform: (Progress) -> Progress) {
+        _progress.update { current ->
+            if (current.generation == generation) transform(current) else current
+        }
+    }
+
     fun finishProgress() {
         _progress.update { it.copy(running = false) }
+    }
+
+    fun finishProgress(generation: Long) {
+        _progress.update { current ->
+            if (current.generation == generation) current.copy(running = false) else current
+        }
     }
 
     private fun dirOf(bookUrl: String): File = File(
