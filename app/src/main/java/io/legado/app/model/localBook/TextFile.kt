@@ -85,8 +85,8 @@ class TextFile(private var book: Book) {
         if (book.charset == null || book.tocUrl.isBlank() || modified) {
             LocalBook.getBookInputStream(book).use { bis ->
                 val buffer = ByteArray(bufferSize)
-                val length = bis.read(buffer)
-                if (length == -1) throw EmptyFileException("Unexpected Empty Txt File")
+                val length = bis.readFully(buffer)
+                if (length <= 0) throw EmptyFileException("Unexpected Empty Txt File")
                 if (book.charset.isNullOrBlank() || modified) {
                     book.charset = EncodingDetect.getEncode(buffer.copyOf(length))
                 }
@@ -185,14 +185,13 @@ class TextFile(private var book: Book) {
             var length: Int
             var lastChapterWordCount = 0
             val buffer = ByteArray(bufferSize)
-            var bufferStart = 3
-            bis.read(buffer, 0, 3)
+            var bufferStart = bis.readFully(buffer, 0, 3)
             if (Utf8BomUtils.hasBom(buffer)) {
                 bufferStart = 0
                 curOffset = 3
             }
             //获取文件中的数据到buffer，直到没有数据为止
-            while (bis.read(
+            while (bis.readFully(
                     buffer, bufferStart, bufferSize - bufferStart
                 ).also { length = it } > 0
             ) {
@@ -389,18 +388,18 @@ class TextFile(private var book: Book) {
             val buffer = ByteArray(bufferSize)
             var bufferStart = 3
             if (fileStart == 0L) {
-                bis.read(buffer, 0, 3)
+                bufferStart = bis.readFully(buffer, 0, 3)
                 if (Utf8BomUtils.hasBom(buffer)) {
                     bufferStart = 0
                     curOffset = 3
                 }
             } else {
-                bis.skip(fileStart)
+                bis.skipFully(fileStart)
                 curOffset = fileStart
                 bufferStart = 0
             }
             //获取文件中的数据到buffer，直到没有数据为止
-            while (fileEnd - curOffset - bufferStart > 0 && bis.read(
+            while (fileEnd - curOffset - bufferStart > 0 && bis.readFully(
                     buffer, bufferStart, min(
                         (bufferSize - bufferStart).toLong(), fileEnd - curOffset - bufferStart
                     ).toInt()
