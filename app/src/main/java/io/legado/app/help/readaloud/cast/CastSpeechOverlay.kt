@@ -59,20 +59,28 @@ object CastSpeechOverlay {
         // 提前返回的这几路整章按旁白读，计划会直接当播放队列用：不发声段仍要按同一口径丢掉
         if (!multiRole && effects.isEmpty()) return dropSilentUnits(plan).first
         // 段级变声器按引号序号存在分配表里（正文胶囊那一栏设的，只管那一句）
+        // 统一取一次章节分配数据：用于效果映射，也用于无角色范围时的诊断。
+        // 日志区分设置开关、数据库分配行和正文实际标记，避免把「开关没开」误判为用户设置问题。
+        val assignmentRows = runCatching {
+            appDb.chapterRoleAssignmentDao.getForChapter(bookUrl, chapterIndex)
+        }.getOrDefault(emptyList())
         val effectsOfQuote = if (paragraphs.isEmpty() || !multiRole) {
             emptyMap()
         } else {
-            appDb.chapterRoleAssignmentDao.getForChapter(bookUrl, chapterIndex)
+            assignmentRows
                 .filter { it.voiceEffect.isNotBlank() }
                 .associate { it.quoteOrdinal to it.voiceEffect }
         }
+        val markerCount = paragraphs.sumOf { CastMarkers.findMarkers(it.text).size }
         val spans = if (multiRole) spansOf(paragraphs, effectsOfQuote) else emptyList()
         if (spans.isEmpty() && effects.isEmpty()) {
-            // 正文里没有角色标记：要么没开「多角色分配」（标记由它注入），要么这一章还没分配过角色
+            // 不再猜原因：设置、分配表与朗读正文标记分别记录，方便直接定位注入/解析/未分配问题。
             val (kept, dropped) = dropSilentUnits(plan)
             AppLog.put(
-                "多角色朗读: 第${chapterIndex + 1}章正文里没有角色标记（未开「多角色分配」或本章未分配），" +
-                        "整章按旁白读；丢掉 $dropped 个不发声单元"
+                "多角色朗读: 第${chapterIndex + 1}章无角色范围；" +
+                    "多角色朗读=$multiRole，多角色分配=${ReadConfig.multiRoleCast}，" +
+                    "章节分配行=${assignmentRows.size}，正文标记=$markerCount，范围=${spans.size}；" +
+                    "整章按旁白读，丢掉 $dropped 个不发声单元"
             )
             return kept
         }
