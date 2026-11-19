@@ -692,6 +692,38 @@ object AiCastPresetStore {
             .apply()
     }
 
+    /**
+     * 阅读页自动逐章分析的完成账本。以章节 URL + 标题指纹识别章节内容，
+     * 目录刷新/章节替换后会自动重新分析，不会把旧章节序号当成新内容跳过。
+     */
+    fun isAutoChapterAnalyzed(bookUrl: String, chapterIndex: Int, fingerprint: String): Boolean =
+        autoChapterLedger(bookUrl)[chapterIndex] == fingerprint
+
+    fun markAutoChapterAnalyzed(bookUrl: String, chapterIndex: Int, fingerprint: String) {
+        val entries = autoChapterLedger(bookUrl).toMutableMap()
+        entries[chapterIndex] = fingerprint
+        // 长篇连载可能有数万章，只保留最近 3000 个章节记录，避免 SharedPreferences 无限增长。
+        val retained = entries.toSortedMap().entries
+            .takeLast(MAX_AUTO_ANALYZED_CHAPTERS)
+            .joinToString(",") { "${it.key}:${it.value}" }
+        prefs().edit().putString(autoChapterKey(bookUrl), retained).apply()
+    }
+
+    private fun autoChapterLedger(bookUrl: String): Map<Int, String> =
+        prefs().getString(autoChapterKey(bookUrl), "").orEmpty()
+            .split(',')
+            .mapNotNull { entry ->
+                val parts = entry.split(':', limit = 2)
+                val index = parts.getOrNull(0)?.toIntOrNull() ?: return@mapNotNull null
+                val fingerprint = parts.getOrNull(1)?.takeIf(String::isNotBlank)
+                    ?: return@mapNotNull null
+                index to fingerprint
+            }.toMap()
+
+    private fun autoChapterKey(bookUrl: String) = "autoCastAnalyzed|$bookUrl"
+
+    private const val MAX_AUTO_ANALYZED_CHAPTERS = 3000
+
     private fun runKey(bookUrl: String, field: String) = "castRun_$field|$bookUrl"
 
     /** v2 只存实际 AI 所有的字段；不能沿用整段 AI 回复构成的旧凭据。 */
