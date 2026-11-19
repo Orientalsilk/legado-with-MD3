@@ -655,7 +655,8 @@ class ReadBookViewModel(
                 analyzeReaderChapter(requestedBook, requestedChapter)
                 // 提前分好下一章：当前章 AI 返回时往往已经开始朗读，只有下一章才赶得上；
                 // 下一章还没下载就读不到正文，这里静默跳过，等它成为当前章再分析
-                val next = appDb.bookChapterDao.getChapter(requestedBook.bookUrl, requestedChapter.index + 1)
+                val next = ReadBook.readerChapterInputWindow.next?.chapter
+                    ?.takeIf { it.bookUrl == requestedBook.bookUrl && it.index == requestedChapter.index + 1 }
                 if (next != null) analyzeReaderChapter(requestedBook, next, quiet = true)
             }
         }
