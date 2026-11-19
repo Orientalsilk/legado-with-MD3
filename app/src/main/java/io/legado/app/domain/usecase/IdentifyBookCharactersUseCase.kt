@@ -386,5 +386,11 @@ internal fun enforceCharacterDiscoveryBoundary(customPrompt: String?): String {
     return base + "\n\nNON-NEGOTIABLE CHARACTER-DISCOVERY BOUNDARY: " +
         "Extract only character identity and novel-supported facts. Do not infer voice gender " +
         "or voice age, choose a voice pool, select a speaker. Do not assign a TTS voice or write " +
-        "voiceGender/voiceAgeBand/pool fields. Voice assignment is a separate workflow."
+        "voiceGender/voiceAgeBand/pool fields. Voice assignment is a separate workflow.\n" +
+        "MANDATORY OUTPUT CONTRACT: Return exactly one JSON object, with no Markdown fences, " +
+        "commentary, or outer wrapper. The top-level object MUST contain a \"characters\" array. " +
+        "Each array item MUST contain: \"name\" (string), \"aliases\" (array of strings), " +
+        "\"personality\" (string), \"summary\" (string), \"evidence\" (string), and " +
+        "\"confidence\" (number from 0 to 1). Use an empty array when no reliable characters " +
+        "are found. Do not rename the top-level key or nest it under data/result/output."
 }
