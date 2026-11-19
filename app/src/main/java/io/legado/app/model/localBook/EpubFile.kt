@@ -22,7 +22,6 @@ import org.jsoup.nodes.Element
 import org.jsoup.parser.Parser
 import org.jsoup.select.Elements
 import java.io.File
-import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.URI
@@ -254,16 +253,23 @@ class EpubFile(var book: Book) {
                 if (fastCheck && File(book.coverUrl!!).exists()) {
                     return
                 }
-                /*部分书籍DRM处理后，封面获取异常，待优化*/
+                /*部分书籍 DRM 处理后封面不是合法图片，decode 会返回 null，不能再 compress */
                 it.coverImage?.inputStream?.use { input ->
                     val cover = BitmapFactory.decodeStream(input)
                     if (cover == null) {
                         AppLog.putDebug("Epub: 封面无法解码. path: ${book.bookUrl}")
                         return@use
                     }
-                    FileOutputStream(FileUtils.createFileIfNotExist(book.coverUrl!!)).use { out ->
-                        cover.compress(Bitmap.CompressFormat.JPEG, 90, out)
-                        out.flush()
+                    try {
+                        val coverPath = book.coverUrl
+                        if (coverPath.isNullOrEmpty()) return@use
+                        FileUtils.writeAtomic(coverPath) { out ->
+                            if (!cover.compress(Bitmap.CompressFormat.JPEG, 90, out)) {
+                                throw IOException("Epub 封面压缩失败")
+                            }
+                        }
+                    } finally {
+                        if (!cover.isRecycled) cover.recycle()
                     }
                 } ?: AppLog.putDebug("Epub: 封面获取为空. path: ${book.bookUrl}")
             }

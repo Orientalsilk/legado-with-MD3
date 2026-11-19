@@ -39,7 +39,7 @@ internal fun txtBufferWindowStart(offset: Long, windowSize: Long = TXT_BUFFER_SI
 
 /**
  * [InputStream.skip] 允许少跳，content:// 和部分压缩流经常这样。
- * 少跳或不跳时改读缓冲块，保证位置真的到了 [byteCount]。
+ * 少跳或不跳时改读单字节，保证位置真的到了 [byteCount]。
  */
 internal fun InputStream.skipFully(byteCount: Long) {
     var remaining = byteCount

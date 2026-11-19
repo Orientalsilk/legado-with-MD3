@@ -119,37 +119,51 @@ class TextFile(private var book: Book) {
         refreshCharset()
         val start = chapter.start!!
         val end = chapter.end!!
-        if (txtBuffer == null || start >= bufferEnd || end <= bufferStart) {
+        if (end < start) return ""
+        if (txtBufferMiss(txtBuffer != null, bufferStart, bufferEnd, start, end)) {
             LocalBook.getBookInputStream(book).use { bis ->
-                bufferStart = txtBufferSize * (start / txtBufferSize)
-                txtBuffer = ByteArray(min(txtBufferSize, bis.available() - bufferStart.toInt()))
-                bufferEnd = bufferStart + txtBuffer!!.size
-                bis.skip(bufferStart)
-                bis.read(txtBuffer)
+                val window = txtBufferWindowStart(start)
+                val loaded = bis.readWindow(window)
+                if (loaded == null) {
+                    txtBuffer = null
+                    bufferStart = -1L
+                    bufferEnd = -1L
+                } else {
+                    txtBuffer = loaded
+                    bufferStart = window
+                    bufferEnd = window + loaded.size
+                }
             }
         }
 
-        val count = (end - start).toInt()
+        val countLong = end - start
+        if (countLong == 0L) return ""
+        if (countLong > Int.MAX_VALUE) {
+            throw java.io.IOException("章节过大: $countLong")
+        }
+        val count = countLong.toInt()
         val buffer = ByteArray(count)
-
-        @Suppress("ConvertTwoComparisonsToRangeCheck")
-        if (start < bufferEnd && end > bufferEnd || start < bufferStart && end > bufferStart) {
-            /** 章节内容在缓冲区交界处 */
-            LocalBook.getBookInputStream(book).use { bis ->
-                bis.skip(start)
-                bis.read(buffer)
-            }
+        val src = txtBuffer
+        val from = (start - bufferStart).toInt()
+        val to = (end - bufferStart).toInt()
+        val readCount = if (
+            src != null &&
+            from >= 0 &&
+            to <= src.size &&
+            from <= to &&
+            !txtBufferCrossesBoundary(bufferStart, bufferEnd, start, end)
+        ) {
+            src.copyInto(buffer, 0, from, to)
+            count
         } else {
-            /** 章节内容在缓冲区内 */
-            txtBuffer!!.copyInto(
-                buffer,
-                0,
-                (start - bufferStart).toInt(),
-                (end - bufferStart).toInt()
-            )
+            LocalBook.getBookInputStream(book).use { bis ->
+                bis.skipFully(start)
+                bis.readFully(buffer)
+            }
         }
+        val bytes = if (readCount == buffer.size) buffer else buffer.copyOf(readCount.coerceAtLeast(0))
 
-        return String(buffer, charset)
+        return String(bytes, charset)
             .substringAfter(chapter.title)
             .replace(padRegex, "　　")
     }
