@@ -33,6 +33,12 @@ internal object TtsTextIndexStore {
     fun upsert(file: File, fileName: String, text: String) {
         if (fileName.isEmpty()) return
         synchronized(monitor) {
+            // Preserve the last committed snapshot before load() compares the on-disk
+            // fingerprint. A failed replacement must not discard it merely because the
+            // destination was externally moved or obstructed before this write.
+            val previousCache = cached
+                ?.takeIf { cachedPath == file.absolutePath }
+                ?.let { LinkedHashMap(it) }
             // Copy-on-write: a failed disk commit must not leak uncommitted changes
             // into the in-memory snapshot returned by later reads.
             val index = LinkedHashMap(load(file))
@@ -47,7 +53,7 @@ internal object TtsTextIndexStore {
                 val oldest = index.keys.firstOrNull() ?: break
                 index.remove(oldest)
             }
-            write(file, index)
+            write(file, index, previousCache)
         }
     }
 
@@ -99,13 +105,16 @@ internal object TtsTextIndexStore {
         return loaded
     }
 
-    private fun write(file: File, index: LinkedHashMap<String, String>) {
+    private fun write(
+        file: File,
+        index: LinkedHashMap<String, String>,
+        previousCache: LinkedHashMap<String, String>? = cached
+            ?.takeIf { cachedPath == file.absolutePath }
+            ?.let { LinkedHashMap(it) },
+    ) {
         val parent = file.parentFile
         parent?.mkdirs()
         val tmp = File.createTempFile("${file.name}-", ".tmp", parent)
-        val previousCache = cached
-            ?.takeIf { cachedPath == file.absolutePath }
-            ?.let { LinkedHashMap(it) }
         try {
             tmp.writeText(json.toJson(index, mapType))
             try {
