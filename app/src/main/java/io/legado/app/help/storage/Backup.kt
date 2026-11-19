@@ -151,7 +151,7 @@ object Backup {
 
     private suspend fun backup(context: Context, path: String?, mode: String = "both") {
         LogUtils.d(TAG, "开始备份 path:$path")
-        LocalConfig.lastBackup = System.currentTimeMillis()
+        val backupTimestamp = System.currentTimeMillis()
         val aes = BackupAES()
         FileUtils.delete(backupPath)
         writeListToJson(
@@ -328,8 +328,11 @@ object Backup {
         } else {
             zipFileName
         }
-        // 本地复制失败（目录权限被撤销等）不应跳过 WebDAV 上传，错误留到最后再抛
+        // 本地复制失败（目录权限被撤销等）不应跳过 WebDAV 上传；但只有至少一个目标实际写入成功，
+        // 才更新 lastBackup，避免压缩失败或所有目标都失败后自动备份仍被压住一整天。
         var localCopyError: Exception? = null
+        var webDavError: Exception? = null
+        var destinationSucceeded = false
         try {
             if (!ZipUtils.zipFiles(paths, zipFilePath)) {
                 throw NoStackTraceException("备份压缩失败")
@@ -349,6 +352,7 @@ object Backup {
                             copyBackup(File(path), backupFileName)
                         }
                     }
+                    destinationSucceeded = true
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
@@ -359,9 +363,11 @@ object Backup {
             if (mode == "both" || mode == "webdav") {
                 try {
                     AppWebDav.backUpWebDav(zipFileName)
+                    destinationSucceeded = true
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
+                    webDavError = e
                     AppLog.put("上传备份至webdav失败\n$e", e)
                 }
             }
@@ -370,6 +376,10 @@ object Backup {
             FileUtils.delete(zipFilePath)
         }
         currentCoroutineContext().ensureActive()
+        if (!destinationSucceeded) {
+            throw localCopyError ?: webDavError ?: NoStackTraceException("备份未写入任何目标")
+        }
+        LocalConfig.lastBackup = backupTimestamp
         readStyleGateway.allBackgroundImagePaths().map {
             if (it.contains(File.separator)) {
                 File(it)
