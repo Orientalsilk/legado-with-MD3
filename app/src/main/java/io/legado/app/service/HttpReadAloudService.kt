@@ -2183,15 +2183,30 @@ class HttpReadAloudService : BaseReadAloudService(),
         playIndexJob?.cancel()
         val index = nowSpeak
         if (readerReadAloudChapter == null || isChapterTitleAt(index)) return
-        val startOffset = paragraphStartPos.coerceAtLeast(0)
-        // 文件/流式音频没有逐字时间戳。按音频时长线性估算文字位置会在停顿、语速变化、
-        // 情绪重音处漂移，甚至把阅读标记推到实际尚未朗读的下一段。
-        // 这里保持在当前播放单元的起始位置；实际进度由媒体项转场（下一单元的准确坐标）
-        // 和用户主动定位更新。宁可单元内不追字，也不显示虚假的段落位置。
-        val chapterPosition = readAloudNumber + startOffset
-        updateReadAloudProgressSnapshot(chapterPosition)
-        moveToReadAloudPage(chapterPosition)
-        upTtsProgress(chapterPosition + 1)
+        val paragraphLength = contentList.getOrNull(index)?.length ?: return
+        val startOffset = paragraphStartPos
+        if (paragraphLength <= startOffset) return
+        val position = exoPlayer.currentMediaItem?.localConfiguration?.tag as? HttpReadAloudSpeechPosition
+            ?: HttpReadAloudSpeechPosition(spokenFor(contentList[index]), startOffset)
+        val chapterStart = readAloudNumber
+        val mediaIndex = exoPlayer.currentMediaItemIndex
+        playIndexJob = lifecycleScope.launch {
+            var lastOffset = -1
+            while (isActive && !pause && nowSpeak == index && exoPlayer.currentMediaItemIndex == mediaIndex) {
+                // 媒体时间会随语速变化，缓冲时则停住。按实际播放头更新进度。
+                if (exoPlayer.isPlaying) {
+                    val offset = position.storedOffset(exoPlayer.currentPosition, exoPlayer.duration)
+                    if (offset > lastOffset) {
+                        val chapterPosition = chapterStart + offset
+                        updateReadAloudProgressSnapshot(chapterPosition)
+                        val pageChanged = moveToReadAloudPage(chapterPosition)
+                        if (lastOffset < 0 || pageChanged) upTtsProgress(chapterPosition)
+                        lastOffset = offset
+                    }
+                }
+                delay(40)
+            }
+        }
     }
 
     /**
