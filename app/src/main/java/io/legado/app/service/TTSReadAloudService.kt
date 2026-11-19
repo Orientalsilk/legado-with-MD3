@@ -974,7 +974,7 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
             speechProgress.remove(utteranceId)
             respeakTries++
             paragraphStartPos = progress.startPos
-            AppLog.put("朗读$reason且没有进度回调，从本句开头恢复（第 $respeakTries 次）")
+            AppLog.put("朗读${reason}且没有进度回调，从本句开头恢复（第 $respeakTries 次）")
             play()
             return true
         }
