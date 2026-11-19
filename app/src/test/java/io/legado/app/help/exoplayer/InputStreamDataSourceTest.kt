@@ -28,6 +28,19 @@ class InputStreamDataSourceTest {
         assertTrue(closed)
     }
 
+    @Test fun `open skips full requested position when stream skip is partial`() {
+        val source = InputStreamDataSource {
+            object : ByteArrayInputStream(byteArrayOf(1, 2, 3, 4, 5)) {
+                override fun skip(count: Long): Long = super.skip(minOf(count, 1L))
+            }
+        }
+        source.open(DataSpec.Builder().setUri(Uri.parse("http://localhost/audio")).setPosition(3).build())
+        val buffer = ByteArray(1)
+        assertEquals(1, source.read(buffer, 0, 1))
+        assertEquals(4, buffer[0].toInt())
+        source.close()
+    }
+
     @Test fun `reopening obtains a fresh stream and closes each one`() {
         var opened = 0
         var closed = 0
