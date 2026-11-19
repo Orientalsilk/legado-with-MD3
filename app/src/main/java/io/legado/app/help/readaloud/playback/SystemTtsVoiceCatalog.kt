@@ -7,9 +7,12 @@ import io.legado.app.domain.model.readaloud.TtsEngineDescriptor
 import io.legado.app.domain.model.readaloud.TtsEngineKind
 import io.legado.app.domain.model.readaloud.TtsNativeVoice
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.resume
+import java.util.Locale
+import android.speech.tts.Voice
 
 class SystemTtsVoiceCatalog(context: Context) {
 
@@ -60,7 +63,12 @@ class SystemTtsVoiceCatalog(context: Context) {
         val tts = withContext(Dispatchers.Main.immediate) { createTts(enginePackage) }
             ?: return null
         return try {
-            withContext(Dispatchers.IO) { block(tts) }
+            withTimeoutOrNull(VOICE_CATALOG_TIMEOUT_MS) {
+                withContext(Dispatchers.IO) { runCatching { block(tts) }.getOrElse { error ->
+                    AppLog.putDebug("系统 TTS 音色目录读取失败: ${error.localizedMessage}")
+                    null
+                } }
+            }.also { if (it == null) AppLog.putDebug("系统 TTS 音色目录读取超时") }
         } finally {
             withContext(Dispatchers.Main.immediate) {
                 tts.stop()
@@ -93,6 +101,23 @@ class SystemTtsVoiceCatalog(context: Context) {
         }
 
     companion object {
+        private const val VOICE_CATALOG_TIMEOUT_MS = 12_000L
+
         fun engineId(sourceId: String): String = "system:$sourceId"
     }
 }
+
+
+/**
+ * MultiTTS 等转发引擎可能因 Binder 回包过大而无法枚举完整 Voice 列表。
+ * 导入的音色已经保存了引擎认可的 speakerId；setVoice 实际按 name 路由，
+ * 因此目录缺失时可用同名轻量描述继续尝试，而不是直接退回默认音色。
+ */
+internal fun syntheticSystemTtsVoice(name: String): Voice = Voice(
+    name,
+    Locale.getDefault(),
+    Voice.QUALITY_NORMAL,
+    Voice.LATENCY_NORMAL,
+    false,
+    emptySet(),
+)
