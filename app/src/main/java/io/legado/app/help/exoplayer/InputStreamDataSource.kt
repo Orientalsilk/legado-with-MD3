@@ -31,7 +31,7 @@ class InputStreamDataSource(private val supplier: () -> InputStream) : BaseDataS
                 inputStream!!.skip(dataSpec.position)
             }
         } catch (error: Throwable) {
-            try { runBlocking(Dispatchers.IO) { runBlocking(Dispatchers.IO) { inputStream?.close() } } } finally { inputStream = null }
+            try { runBlocking(Dispatchers.IO) { inputStream?.close() } } finally { inputStream = null }
             throw error
         }
 
@@ -82,7 +82,7 @@ class InputStreamDataSource(private val supplier: () -> InputStream) : BaseDataS
             return
         }
         try {
-            inputStream?.close()
+            runBlocking(Dispatchers.IO) { inputStream?.close() }
         } finally {
             inputStream = null
             opened = false
