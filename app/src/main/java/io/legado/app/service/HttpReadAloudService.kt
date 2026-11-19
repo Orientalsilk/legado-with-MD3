@@ -553,11 +553,6 @@ class HttpReadAloudService : BaseReadAloudService(),
     @Volatile
     private var audioDownloadOnly = false
 
-    /** 句子计数：并发合成时只有这一个写入点，用原子计数免得加锁。 */
-    private val audioDownloadSentences = java.util.concurrent.atomic.AtomicInteger(0)
-
-    /** 这一批里合成失败、没落进下载区的句子数。 */
-    private val audioDownloadFailed = java.util.concurrent.atomic.AtomicInteger(0)
 
     /**
      * 把 [start]..[end] 章的朗读音频合成到下载区（含只有本章：start == end）。
@@ -576,7 +571,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         audioDownloadTask = null
         previous?.cancel()
         audioDownloadOnly = downloadOnly
-        audioDownloadFailed.set(0)
+        val counters = ReadAloudAudioStore.DownloadCounters()
         // 这里只写内存状态：onStartCommand 跑在主线程，查书、解析合成源都放到下载协程里，
         // 否则服务冷启动时阅读界面会先卡一下（Room 开了 allowMainThreadQueries，不报错只阻塞）
         val generation = ReadAloudAudioStore.beginDownload(bookUrl, last - start + 1)
@@ -608,7 +603,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                     continue
                 }
                 consecutiveFailures = 0
-                downloadChapterAudio(book, chapter.index, prepared, httpTts, chapterDone, generation)
+                downloadChapterAudio(book, chapter.index, prepared, httpTts, chapterDone, generation, counters)
             }
             upAudioDownloadNotification(force = true)
             toastOnUi("听书音频下载结束")
@@ -661,6 +656,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         httpTts: HttpTTS,
         chapterDone: Int,
         generation: Long,
+        counters: ReadAloudAudioStore.DownloadCounters,
     ) = coroutineScope {
         val bookUrl = book.bookUrl
         val concurrency = synthesisConcurrency()
@@ -669,7 +665,6 @@ class HttpReadAloudService : BaseReadAloudService(),
             speechText(prepared.contentList[index]).readAloudSpeechText().isNotEmpty()
         }
         val total = speakableIndices.size
-        audioDownloadSentences.set(0)
         ReadAloudAudioStore.updateProgress(generation) {
             it.copy(
                 chapterDone = chapterDone - 1,
@@ -699,12 +694,12 @@ class HttpReadAloudService : BaseReadAloudService(),
                         // 已经在 downloadAudioSentence 里记过账，不能重复计数）。
                         var fileName: String? = null
                         val finished = withTimeoutOrNull(AUDIO_DOWNLOAD_SENTENCE_TIMEOUT_MS) {
-                            fileName = downloadAudioSentence(bookUrl, prepared, index, raw, httpTts, generation)
+                            fileName = downloadAudioSentence(bookUrl, prepared, index, raw, httpTts, generation, counters)
                             true
                         }
                         if (finished == null) {
                             AppLog.put("听书下载单句超时：${prepared.chapterTitle} 第 ${index + 1} 句")
-                            audioDownloadFailed.incrementAndGet()
+                            counters.failed.incrementAndGet()
                         }
                         fileName
                     } finally {
@@ -716,7 +711,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         }
         ReadAloudAudioStore.record(bookUrl, chapterIndex, prepared.chapterTitle, files, total)
         ReadAloudAudioStore.updateProgress(generation) {
-            it.copy(chapterDone = chapterDone, failed = audioDownloadFailed.get())
+            it.copy(chapterDone = chapterDone, failed = counters.failed.get())
         }
         upAudioDownloadNotification(force = true)
     }
@@ -729,6 +724,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         raw: String,
         httpTts: HttpTTS,
         generation: Long,
+        counters: ReadAloudAudioStore.DownloadCounters,
     ): String? {
         val content = speechText(raw)
         val routedVoice = voiceForCue(prepared.queue, index, httpTts)
@@ -738,7 +734,7 @@ class HttpReadAloudService : BaseReadAloudService(),
             sourceKey = sourceKeyForCue(routedVoice, cue, httpTts),
         )
         if (ReadAloudAudioStore.downloadedFile(bookUrl, fileName) != null) {
-            return finishAudioDownloadSentence(bookUrl, fileName, generation)
+            return finishAudioDownloadSentence(bookUrl, fileName, generation, counters)
         }
         if (synthesizeCueWithSystemFile(
                 routedVoice, cue, content, prepared.chapterTitle, httpTts, fileName
@@ -749,7 +745,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         // 合成失败就什么都不写。落一份无声占位当「下载成功」，这一句以后永远
         // 播空白：朗读侧在缓存里认到同名文件就不再重新合成，下载区那份又优先
         // 于缓存，连清缓存都救不回来。
-        audioDownloadFailed.incrementAndGet()
+        counters.failed.incrementAndGet()
         return null
     }
 
@@ -758,6 +754,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         bookUrl: String,
         fileName: String,
         generation: Long,
+        counters: ReadAloudAudioStore.DownloadCounters,
     ): String? {
         val cacheFile = getSpeakFileAsMd5(fileName)
         // 下载区复制需要读取一份完整且稳定的源文件；复制与缓存清理共用同一把锁。
@@ -797,10 +794,10 @@ class HttpReadAloudService : BaseReadAloudService(),
         if (saved == null) {
             // 合成说成功、缓存里却没有可复制的完整文件（被清/被并发删掉）：
             // 这一句同样没进下载区，计数要跟上，否则界面上是「少了句但 0 失败」
-            audioDownloadFailed.incrementAndGet()
+            counters.failed.incrementAndGet()
             return null
         }
-        val done = audioDownloadSentences.incrementAndGet()
+        val done = counters.sentenceDone.incrementAndGet()
         ReadAloudAudioStore.updateProgress(generation) {
             it.copy(sentenceDone = maxOf(it.sentenceDone, done))
         }
