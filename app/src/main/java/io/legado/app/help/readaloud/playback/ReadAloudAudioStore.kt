@@ -17,6 +17,7 @@ import java.nio.file.Files
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * 听书音频的下载区。
@@ -45,6 +46,12 @@ object ReadAloudAudioStore {
         val placeholder = silentSoundBytes
         if (file.length() != placeholder.size.toLong()) return false
         return runCatching { file.readBytes().contentEquals(placeholder) }.getOrDefault(false)
+    }
+
+    /** Counters are owned by a single download run, so canceled jobs cannot increment a newer run. */
+    class DownloadCounters {
+        val sentenceDone = AtomicInteger(0)
+        val failed = AtomicInteger(0)
     }
 
     /** 下载进度：章节和句子两条，界面要同时显示。 */
