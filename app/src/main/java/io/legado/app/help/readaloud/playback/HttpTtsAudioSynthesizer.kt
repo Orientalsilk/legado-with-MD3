@@ -90,6 +90,7 @@ class HttpTtsAudioSynthesizer(private val repository: HttpTtsRepository) {
                 currentEmotionTag = mapped.emotionTag,
                 source = source,
                 readTimeout = HTTP_TTS_STREAM_READ_TIMEOUT_MS,
+                callTimeout = HTTP_TTS_STREAM_CALL_TIMEOUT_MS,
                 coroutineContext = currentCoroutineContext(),
             )
             var audioResponse = analyze.getResponseAwait { call ->
@@ -161,13 +162,15 @@ internal fun httpTtsAudioCacheSourceKey(source: HttpTTS, voice: ReadAloudVoice, 
 
 /**
  * 流式朗读不能让一个无响应的 TTS 源占住 ExoPlayer 读取线程数分钟。
- * 该超时是相邻网络读取之间的等待上限，不限制整段音频的总时长。
+ * 读取间隔缩短到 60 秒；整段响应仍保留 10 分钟总时限，避免误伤正常长音频。
  */
 internal const val HTTP_TTS_STREAM_READ_TIMEOUT_MS = 60_000L
 
-/** 流建立阶段只允许一次短暂重试，避免多次长超时叠加成数十分钟的无声等待。 */
+/** 保留较长的整段响应窗口；单句合成可能需要持续传输数分钟。 */
+internal const val HTTP_TTS_STREAM_CALL_TIMEOUT_MS = 10 * 60_000L
+
+/** 连接拒绝通常是快速失败，可重试一次；读取超时不重试，避免每次等待叠加。 */
 internal const val HTTP_TTS_STREAM_OPEN_RETRY_LIMIT = 1
 
 internal fun shouldRetryHttpTtsStreamOpen(error: Throwable, retryCount: Int): Boolean =
-    retryCount < HTTP_TTS_STREAM_OPEN_RETRY_LIMIT &&
-        (error is java.net.SocketTimeoutException || error is java.net.ConnectException)
+    retryCount < HTTP_TTS_STREAM_OPEN_RETRY_LIMIT && error is java.net.ConnectException
