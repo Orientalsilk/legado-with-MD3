@@ -34,13 +34,6 @@ object ExoPlayerHelper {
 
     private const val SPLIT_TAG = "\uD83D\uDEA7"
 
-    // Audio-only playback: bounded buffer footprint for low-memory Android devices.
-    internal const val AUDIO_PLAYER_TARGET_BUFFER_BYTES = 8 * 1024 * 1024
-    private const val AUDIO_PLAYER_MIN_BUFFER_MS = 10_000
-    private const val AUDIO_PLAYER_MAX_BUFFER_MS = 30_000
-    private const val AUDIO_PLAYER_BUFFER_FOR_PLAYBACK_MS = 1_000
-    private const val AUDIO_PLAYER_BUFFER_AFTER_REBUFFER_MS = 2_000
-
     private val mapType by lazy {
         object : TypeToken<Map<String, String>>() {}.type
     }
@@ -60,16 +53,12 @@ object ExoPlayerHelper {
 
     fun createHttpExoPlayer(context: Context): ExoPlayer {
         return ExoPlayer.Builder(context).setLoadControl(
-            DefaultLoadControl.Builder()
-                // 仅供有声书/网络音频播放：避免低内存设备因异常媒体/长缓冲造成过量分配。
-                .setTargetBufferBytes(AUDIO_PLAYER_TARGET_BUFFER_BYTES)
-                .setBufferDurationsMs(
-                    AUDIO_PLAYER_MIN_BUFFER_MS,
-                    AUDIO_PLAYER_MAX_BUFFER_MS,
-                    AUDIO_PLAYER_BUFFER_FOR_PLAYBACK_MS,
-                    AUDIO_PLAYER_BUFFER_AFTER_REBUFFER_MS,
-                )
-                .build()
+            DefaultLoadControl.Builder().setBufferDurationsMs(
+                DefaultLoadControl.DEFAULT_MIN_BUFFER_MS,
+                DefaultLoadControl.DEFAULT_MAX_BUFFER_MS,
+                DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_MS / 10,
+                DefaultLoadControl.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS / 10
+            ).build()
 
         ).setMediaSourceFactory(
             DefaultMediaSourceFactory(context)
