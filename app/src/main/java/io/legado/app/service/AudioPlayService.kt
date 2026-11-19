@@ -244,13 +244,14 @@ class AudioPlayService : BaseService(),
      */
     @SuppressLint("WakelockTimeout")
     private fun play() {
+        upAudioPlayNotification()
+        if (!requestFocus()) {
+            AudioPlay.upLoading(false)
+            return
+        }
         if (useWakeLock) {
             wakeLock.acquire()
             wifiLock?.acquire()
-        }
-        upAudioPlayNotification()
-        if (!requestFocus()) {
-            return
         }
         execute(context = Main) {
             AudioPlay.status = Status.STOP
@@ -410,6 +411,13 @@ class AudioPlayService : BaseService(),
      */
     override fun onPlayerError(error: PlaybackException) {
         super.onPlayerError(error)
+        pause = true
+        needResumeOnAudioFocusGain = false
+        if (useWakeLock) {
+            wakeLock.release()
+            wifiLock?.release()
+        }
+        abandonFocus()
         AudioPlay.status = Status.STOP
         postEvent(EventBus.AUDIO_STATE, Status.STOP)
         AudioPlay.upLoading(false)
