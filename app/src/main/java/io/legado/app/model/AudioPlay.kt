@@ -478,8 +478,11 @@ object AudioPlay : CoroutineScope by MainScope() {
         if (activityContext === context) {
             activityContext = null
             callback = null
+            // Keep chapter loading alive while the background audio service owns playback.
+            if (serviceContext == null) {
+                coroutineContext.cancelChildren()
+            }
         }
-        coroutineContext.cancelChildren()
     }
 
     fun registerService(context: Context) {
