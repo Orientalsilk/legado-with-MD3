@@ -869,6 +869,13 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
             val cue = liveCueOf(utteranceId) ?: return@postTtsCallback
             val spoken = pendingUtterances.remove(utteranceId)
             val progress = speechProgress[utteranceId]
+            if (interrupted && cue != nowSpeak && hasSpeechPlaybackQueue) {
+                // 预取句在轮到它之前就被引擎中断：不能把它记成「已念完」，否则游标到这里会漏句。
+                // 当前句从最近一次范围回调的位置重起，并用新会话号隔离旧窗口的迟到回调。
+                AppLog.put("朗读预取句被引擎提前中断，正在重建当前朗读窗口")
+                if (!pause) play()
+                return@postTtsCallback
+            }
             if (interrupted && cue == nowSpeak && progress != null) {
                 // 支持范围回调的引擎从最后确认的位置续念；不支持范围回调的引擎从本句起点重试，
                 // 宁可在极少数中断场景重复几个字，也不要静默漏掉整句后半段。
