@@ -42,6 +42,11 @@ class IdentifyBookCharactersUseCaseTest {
     }
 
     @Test
+    fun `character response parser accepts a valid empty result`() {
+        assertTrue(parseCharacterCandidates("""{"characters":[]}""").isEmpty())
+    }
+
+    @Test
     fun `identity key ignores spacing and harmless punctuation`() {
         assertTrue(
             normalizeCharacterIdentityKey("  林·晚  ") ==
@@ -76,6 +81,8 @@ class IdentifyBookCharactersUseCaseTest {
         assertTrue(prompt.contains("Do not infer voice gender"))
         assertTrue(prompt.contains("Do not assign a TTS voice"))
         assertTrue(prompt.contains("Voice assignment is a separate workflow"))
+        assertTrue(prompt.contains("top-level object MUST contain a \\"characters\\" array"))
+        assertTrue(prompt.contains("Do not rename the top-level key"))
     }
 
     @Test
