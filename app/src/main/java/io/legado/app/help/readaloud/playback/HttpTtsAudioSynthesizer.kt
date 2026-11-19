@@ -134,9 +134,15 @@ class HttpTtsAudioSynthesizer(private val repository: HttpTtsRepository) {
                     throw error
                 }
             }
-            ownedStream = stream
+            val guardedStream = try {
+                GuardedTtsAudioInputStream(stream)
+            } catch (guardError: Throwable) {
+                stream.close()
+                throw guardError
+            }
+            ownedStream = guardedStream
             currentCoroutineContext().ensureActive()
-            stream
+            guardedStream
         } catch (error: Throwable) {
             try { ownedStream?.close() ?: response?.close() } finally {
                 cancellation?.cancel()
