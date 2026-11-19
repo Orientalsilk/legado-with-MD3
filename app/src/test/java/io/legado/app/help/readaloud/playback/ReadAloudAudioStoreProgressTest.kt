@@ -77,4 +77,24 @@ class ReadAloudAudioStoreProgressTest {
         // 「读 value 再 copy 回去」在并发下会少加：这里钉住 update 的原子性
         assertEquals(threads * perThread, ReadAloudAudioStore.progress.value.sentenceDone)
     }
+    @Test
+    fun `stale generation cannot update newer download progress`() {
+        val oldGeneration = ReadAloudAudioStore.beginDownload("book-a", 1)
+        ReadAloudAudioStore.updateProgress(oldGeneration) { it.copy(sentenceDone = 7, failed = 2) }
+        val newGeneration = ReadAloudAudioStore.beginDownload("book-b", 3)
+
+        ReadAloudAudioStore.updateProgress(oldGeneration) {
+            it.copy(sentenceDone = 99, failed = 99, chapterDone = 99)
+        }
+        ReadAloudAudioStore.finishProgress(oldGeneration)
+
+        val progress = ReadAloudAudioStore.progress.value
+        assertEquals(newGeneration, progress.generation)
+        assertEquals("book-b", progress.bookUrl)
+        assertEquals(0, progress.sentenceDone)
+        assertEquals(0, progress.failed)
+        assertEquals(0, progress.chapterDone)
+        assertTrue(progress.running)
+    }
+
 }
