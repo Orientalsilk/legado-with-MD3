@@ -168,7 +168,6 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
         playAfterTtsInit = false
         activeVoiceName = ""
         voiceIsDefault = true
-        voiceCatalogCache = null
         appliedSpeechRate = -1f
         appliedPitch = -1f
         initGeneration++
