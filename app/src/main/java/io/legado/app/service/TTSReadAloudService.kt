@@ -1013,12 +1013,13 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
             reason: String,
         ): Boolean {
             if (spoken == null) return false
-            val progress = speechProgress.remove(utteranceId) ?: return false
+            val progress = speechProgress[utteranceId] ?: return false
             if (cue != nowSpeak) return false
             if (!progress.sawRange || respeakTries >= MAX_RESPEAK_TRIES) return false
             if (spoken.text.length - progress.rangeEnd < MIN_RESPEAK_TAIL) return false
             val resumeFrom = spoken.storedOf(progress.rangeEnd)
             if (resumeFrom <= progress.startPos) return false
+            speechProgress.remove(utteranceId)
             respeakTries++
             AppLog.put(
                 "朗读$reason：这一句差 ${spoken.text.length - progress.rangeEnd} 字没收尾，" +
