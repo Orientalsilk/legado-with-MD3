@@ -198,7 +198,7 @@ class TTSReadAloudSpeechWindowServiceTest {
                     bookUrl = "test",
                     chapterIndex = 0,
                     text = line,
-                    chapterPosition = index,
+                    chapterPosition = lines.take(index).sumOf { it.length + 1 },
                     paragraphIndex = index,
                     start = 0,
                     end = line.length,
