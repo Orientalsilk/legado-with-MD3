@@ -138,6 +138,19 @@ class TTSReadAloudSpeechWindowServiceTest {
     }
 
     @Test
+    fun engineErrorWithoutRangeCallbacksRetriesCurrentCue() {
+        play("A", "B")
+
+        val first = assertNextSpoken("A")
+        assertNextSpoken("B")
+        engine.listener.onError(first.id, TextToSpeech.ERROR_SYNTHESIS)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertNextSpoken("A")
+        assertEquals(0, service.nowSpeak)
+    }
+
+    @Test
     fun interruptedPrefetchedCueRebuildsWindowInsteadOfSkippingIt() {
         play("A", "B")
 
