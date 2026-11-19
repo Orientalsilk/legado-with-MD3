@@ -109,6 +109,19 @@ class TTSReadAloudSpeechWindowServiceTest {
     }
 
     @Test
+    fun interruptedUtteranceWithoutRangeCallbacksRetriesCurrentCue() {
+        play("A", "B")
+
+        val first = assertNextSpoken("A")
+        assertNextSpoken("B")
+        engine.listener.onStop(first.id, true)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertNextSpoken("A")
+        assertEquals(0, service.nowSpeak)
+    }
+
+    @Test
     fun prefetchesOnlyCuesWithTheSameEngineState() {
         play("A", "B", "C", "D")
 
