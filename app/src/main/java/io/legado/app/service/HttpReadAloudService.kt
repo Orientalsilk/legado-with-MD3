@@ -1537,10 +1537,12 @@ class HttpReadAloudService : BaseReadAloudService(),
                 if (speakText.isEmpty()) {
                     resources.openRawResource(R.raw.silent_sound)
                 } else {
-                    val streamOwner = lifecycleScope.coroutineContext[Job]!!
-                    runBlocking(streamOwner) {
-                        // 预取和播放器共用缓存。只有播放器推进到失败的媒体时才处理停播。
-                        getSpeakStream(httpTts, speakText, voice, emotionTag, streamOwner, reportErrors = false)
+                    runBlocking {
+                        // 请求绑定当前 DataSource.open 的加载任务，而不是整个服务生命周期。
+                        // ExoPlayer 切章/停止时会取消加载；取消必须继续传到 OkHttp Call，
+                        // 否则旧请求会占住源级并发配额，拖慢新章节的合成。
+                        val requestJob = currentCoroutineContext()[Job]
+                        getSpeakStream(httpTts, speakText, voice, emotionTag, requestJob, reportErrors = false)
                             ?: throw IOException("HTTP 引擎未返回当前句的音频")
                     }
                 }
