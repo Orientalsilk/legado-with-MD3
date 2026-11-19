@@ -145,7 +145,7 @@ object AudioPlay : CoroutineScope by MainScope() {
 
 
     private fun isCurrentPlayUrlRequest(generation: Long, bookUrl: String, index: Int): Boolean =
-        playUrlRequestGeneration == generation && book?.bookUrl == bookUrl && durChapterIndex == index
+        isCurrentAudioChapterRequest(playUrlRequestGeneration, generation, book?.bookUrl, bookUrl, durChapterIndex, index
 
     fun loadOrUpPlayUrl() {
         if (durPlayUrl.isEmpty()) {
@@ -503,3 +503,14 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
 }
+
+
+internal fun isCurrentAudioChapterRequest(
+    currentGeneration: Long,
+    requestGeneration: Long,
+    currentBookUrl: String?,
+    requestBookUrl: String,
+    currentChapterIndex: Int,
+    requestChapterIndex: Int,
+): Boolean = currentGeneration == requestGeneration && currentBookUrl == requestBookUrl &&
+    currentChapterIndex == requestChapterIndex
