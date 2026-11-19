@@ -89,7 +89,7 @@ class HttpTtsAudioSynthesizer(private val repository: HttpTtsRepository) {
                 currentEmotionName = mapped.emotionName,
                 currentEmotionTag = mapped.emotionTag,
                 source = source,
-                readTimeout = 300 * 1000L,
+                readTimeout = HTTP_TTS_STREAM_READ_TIMEOUT_MS,
                 coroutineContext = currentCoroutineContext(),
             )
             var audioResponse = analyze.getResponseAwait { call ->
@@ -157,3 +157,17 @@ internal fun httpTtsAudioCacheSourceKey(source: HttpTTS, voice: ReadAloudVoice, 
         "${HttpTtsEmotionMapper.VERSION}:${voice.emotionCatalogJson}:${source.speed}:${source.lastUpdateTime}:" +
         "${source.header}:${source.jsLib}:${source.url}"
 }
+
+
+/**
+ * 流式朗读不能让一个无响应的 TTS 源占住 ExoPlayer 读取线程数分钟。
+ * 该超时是相邻网络读取之间的等待上限，不限制整段音频的总时长。
+ */
+internal const val HTTP_TTS_STREAM_READ_TIMEOUT_MS = 60_000L
+
+/** 流建立阶段只允许一次短暂重试，避免多次长超时叠加成数十分钟的无声等待。 */
+internal const val HTTP_TTS_STREAM_OPEN_RETRY_LIMIT = 1
+
+internal fun shouldRetryHttpTtsStreamOpen(error: Throwable, retryCount: Int): Boolean =
+    retryCount < HTTP_TTS_STREAM_OPEN_RETRY_LIMIT &&
+        (error is java.net.SocketTimeoutException || error is java.net.ConnectException)
