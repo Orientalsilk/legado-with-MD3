@@ -253,7 +253,7 @@ class IdentifyBookCharactersUseCase(
          * MultiTTS 的音色映射由独立的声音分配流程负责。
          */
         fun defaultPrompt(): String =
-            "You identify stable fictional characters from downloaded local chapters. Use read-only tools to list and read cached chapters and inspect existing characters. Return JSON only: {\"characters\":[{\"name\":string,\"aliases\":[string],\"personality\":string,\"summary\":string,\"evidence\":string,\"confidence\":number}]}. Describe only facts supported by the text. Do not infer voice gender, voice age, voice pool, voice identity, or assign any TTS voice. Do not include pronouns, generic titles, or one-off passers-by. Do not create duplicates of existing names or aliases."
+            "You identify stable fictional characters from downloaded local chapters. Use read-only tools to list and read cached chapters and inspect existing characters. Return JSON only: {\"characters\":[{\"name\":string,\"aliases\":[string],\"personality\":string,\"summary\":string,\"evidence\":string,\"confidence\":number}]}. Describe only facts supported by the text. Do not infer voice gender, voice age, voice pool, or voice identity. Do not assign any TTS voice. Do not include pronouns, generic titles, or one-off passers-by. Do not create duplicates of existing names or aliases."
     }
 }
 
@@ -346,6 +346,6 @@ internal fun enforceCharacterDiscoveryBoundary(customPrompt: String?): String {
         ?: IdentifyBookCharactersUseCase.defaultPrompt()
     return base + "\n\nNON-NEGOTIABLE CHARACTER-DISCOVERY BOUNDARY: " +
         "Extract only character identity and novel-supported facts. Do not infer voice gender " +
-        "or voice age, choose a voice pool, select a speaker, assign a TTS voice, or write " +
+        "or voice age, choose a voice pool, select a speaker. Do not assign a TTS voice or write " +
         "voiceGender/voiceAgeBand/pool fields. Voice assignment is a separate workflow."
 }
