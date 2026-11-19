@@ -66,6 +66,26 @@ class ReaderTextBackgroundLoaderTest {
     }
 
     @Test
+    fun downsamplesVeryWideImagesEvenWhenTheirHeightFitsTheViewport() {
+        val metrics = RuntimeEnvironment.getApplication().resources.displayMetrics
+        val targetWidth = metrics.widthPixels.coerceAtLeast(1)
+        val targetHeight = metrics.heightPixels.coerceAtLeast(1)
+        val imageWidth = targetWidth * 8
+        val imageHeight = minOf(64, targetHeight).coerceAtLeast(1)
+        val file = temporaryFolder.newFile("wide-background.png")
+        Bitmap.createBitmap(imageWidth, imageHeight, Bitmap.Config.ARGB_8888).apply {
+            eraseColor(Color.GREEN)
+            file.outputStream().use { compress(Bitmap.CompressFormat.PNG, 100, it) }
+            recycle()
+        }
+
+        val decodedSize = ReaderTextBackgroundLoader.dimensions(file.absolutePath)
+
+        assertTrue("decoded width should fit the viewport: $decodedSize", decodedSize.first <= targetWidth)
+        assertTrue("decoded height should not exceed source height", decodedSize.second <= imageHeight)
+    }
+
+    @Test
     fun preservesLegacyAssetSourceConventions() {
         assertEquals(listOf("themes/paper.png"), ReaderTextBackgroundLoader.assetCandidates("assets://themes/paper.png"))
         assertEquals(listOf("bg/paper.png"), ReaderTextBackgroundLoader.assetCandidates("paper.png"))
