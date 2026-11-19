@@ -6,13 +6,13 @@ import io.legado.app.constant.AppLog
 import io.legado.app.domain.model.readaloud.TtsEngineDescriptor
 import io.legado.app.domain.model.readaloud.TtsEngineKind
 import io.legado.app.domain.model.readaloud.TtsNativeVoice
+import android.speech.tts.Voice
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
-import android.speech.tts.Voice
+import kotlin.coroutines.resume
 
 class SystemTtsVoiceCatalog(context: Context) {
 
@@ -60,8 +60,12 @@ class SystemTtsVoiceCatalog(context: Context) {
         block: suspend (TextToSpeech) -> T,
     ): T? {
         // 实例必须在有 Looper 的线程上建，读音色却会同步等引擎回包，所以读放在 IO 上
-        val tts = withContext(Dispatchers.Main.immediate) { createTts(enginePackage) }
-            ?: return null
+        val tts = withTimeoutOrNull(ENGINE_INIT_TIMEOUT_MS) {
+            withContext(Dispatchers.Main.immediate) { createTts(enginePackage) }
+        } ?: run {
+            AppLog.putDebug("系统 TTS 引擎初始化超时: $enginePackage")
+            return null
+        }
         return try {
             withTimeoutOrNull(VOICE_CATALOG_TIMEOUT_MS) {
                 withContext(Dispatchers.IO) { runCatching { block(tts) }.getOrElse { error ->
@@ -71,8 +75,8 @@ class SystemTtsVoiceCatalog(context: Context) {
             }.also { if (it == null) AppLog.putDebug("系统 TTS 音色目录读取超时") }
         } finally {
             withContext(Dispatchers.Main.immediate) {
-                tts.stop()
-                tts.shutdown()
+                runCatching { tts.stop() }
+                runCatching { tts.shutdown() }
             }
         }
     }
@@ -101,6 +105,7 @@ class SystemTtsVoiceCatalog(context: Context) {
         }
 
     companion object {
+        private const val ENGINE_INIT_TIMEOUT_MS = 10_000L
         private const val VOICE_CATALOG_TIMEOUT_MS = 12_000L
 
         fun engineId(sourceId: String): String = "system:$sourceId"
