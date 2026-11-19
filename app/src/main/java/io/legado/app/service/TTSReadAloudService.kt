@@ -140,6 +140,7 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
     @Synchronized
     private fun initTts(engineOverride: String? = null) {
         ttsInitFinish = false
+        voiceCatalogCache = null
         appliedSpeechRate = -1f
         appliedPitch = -1f
         val engine = engineOverride
