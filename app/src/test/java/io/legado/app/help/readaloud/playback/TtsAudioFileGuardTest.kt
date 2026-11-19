@@ -19,7 +19,13 @@ class TtsAudioFileGuardTest {
     }
 
     @Test fun rejectsId3SizeThatExceedsFileLength() {
-        withFile(id3Header(tagBytes = 523_857_104)) {
+        withFile(id3Header(tagBytes = 1_000)) {
+            assertNotNull(TtsAudioFileGuard.validateId3Header(it))
+        }
+    }
+
+    @Test fun rejectsOversizedId3Metadata() {
+        withFile(id3Header(tagBytes = TtsAudioFileGuard.MAX_ID3_TAG_BYTES + 1)) {
             assertNotNull(TtsAudioFileGuard.validateId3Header(it))
         }
     }
