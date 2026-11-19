@@ -24,7 +24,6 @@ import io.legado.app.feature.reader.core.readaloud.isBlankReadAloudUnit
 import io.legado.app.help.MediaHelp
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.readaloud.effect.VoiceEffectAudio
-import io.legado.app.help.readaloud.playback.syntheticSystemTtsVoice
 import io.legado.app.help.readaloud.effect.VoiceEffectStore
 import io.legado.app.lib.dialogs.SelectItem
 import io.legado.app.model.ReadAloud
