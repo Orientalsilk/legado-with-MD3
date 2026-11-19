@@ -666,9 +666,10 @@ class ReadBookViewModel(
                 )
             ) return
 
-            // 没有启用声音池就不发起 AI 请求，避免生成无法落地的分配。
-            if (VoicePoolStore.enabledPoolNames().isEmpty()) {
-                AppLog.putDebug("自动人物分析跳过：没有启用的声音池（${chapter.title}）")
+            // 只有池名还不够：默认池可能没有任何启用音色。没有真实可用音色时，
+            // 不应为了最终无法落地的分配而调用 AI、消耗用户额度。
+            if (VoicePoolStore.voicePoolMap().isEmpty()) {
+                AppLog.putDebug("自动人物分析跳过：没有可用的声音池音色（${chapter.title}）")
                 return
             }
 
