@@ -24,6 +24,7 @@ import io.legado.app.feature.reader.core.readaloud.isBlankReadAloudUnit
 import io.legado.app.help.MediaHelp
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.readaloud.effect.VoiceEffectAudio
+import io.legado.app.help.readaloud.playback.syntheticSystemTtsVoice
 import io.legado.app.help.readaloud.effect.VoiceEffectStore
 import io.legado.app.lib.dialogs.SelectItem
 import io.legado.app.model.ReadAloud
@@ -654,13 +655,12 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
             return restoreDefaultVoice(tts)
         }
         if (!voiceIsDefault && voiceName == activeVoiceName) return false
+        // MultiTTS 转发器的音色目录可能因 Binder 回包过大而为空；导入时保存的 speakerId
+        // 已是引擎原始音色名，目录缺失时直接按名字尝试 setVoice，不能静默降级成默认音色。
         val voice = voiceCatalog().firstOrNull { it.name == voiceName }
-        if (voice == null) {
-            // 引擎报不出这个音色名（MultiTTS 那类 getVoices 回包超限的引擎会整表为空）时，
-            // 换音静默失败，之后的旁白都还是默认音色
-            AppLog.put("系统 TTS 找不到音色 $voiceName，改用默认音色")
-            return restoreDefaultVoice(tts)
-        }
+            ?: syntheticSystemTtsVoice(voiceName).also {
+                AppLog.putDebug("系统 TTS 音色目录未包含 $voiceName，尝试直接按音色名切换")
+            }
         if (tts.setVoice(voice) == TextToSpeech.SUCCESS) {
             voiceIsDefault = false
             activeVoiceName = voiceName
@@ -670,10 +670,11 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
         return false
     }
 
-    /** 退回引擎默认音色（setVoice(null) 就是「用引擎自己的默认」，不依赖它报不报得出名字）。 */
+    /** 退回引擎默认音色；Android TTS 不保证接受 null，必须先取真实默认 Voice。 */
     private fun restoreDefaultVoice(tts: TextToSpeech): Boolean {
         if (voiceIsDefault && activeVoiceName.isEmpty()) return false
-        if (tts.setVoice(null) == TextToSpeech.SUCCESS) {
+        val defaultVoice = runCatching { tts.defaultVoice }.getOrNull()
+        if (defaultVoice != null && tts.setVoice(defaultVoice) == TextToSpeech.SUCCESS) {
             voiceIsDefault = true
             activeVoiceName = ""
             return true
