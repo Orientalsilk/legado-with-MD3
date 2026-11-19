@@ -145,7 +145,7 @@ object AudioPlay : CoroutineScope by MainScope() {
 
 
     private fun isCurrentPlayUrlRequest(generation: Long, bookUrl: String, index: Int): Boolean =
-        isCurrentAudioChapterRequest(playUrlRequestGeneration, generation, book?.bookUrl, bookUrl, durChapterIndex, index
+        isCurrentAudioChapterRequest(playUrlRequestGeneration, generation, book?.bookUrl, bookUrl, durChapterIndex, index)
 
     fun loadOrUpPlayUrl() {
         if (durPlayUrl.isEmpty()) {
@@ -167,71 +167,48 @@ object AudioPlay : CoroutineScope by MainScope() {
             appCtx.toastOnUi("book or source is null")
             return
         }
-        if (addLoading(bookUrl, index)) {
-            val generation = ++playUrlRequestGeneration
-                upDurChapter()
-                val chapter = durChapter
-                if (chapter == null) {
-                    removeLoading(bookUrl, index)
-                    return
-                }
-                if (chapter.isVolume) {
-                    skipTo(index + 1)
-                    removeLoading(bookUrl, index)
-                    return
-                }
-                upLoading(true)
-                WebBook.getContent(this, currentSource, currentBook, chapter)
-                    .onSuccess { content ->
-                        if (!isCurrentPlayUrlRequest(generation, bookUrl, index)) return@onSuccess
-                        if (content.isEmpty()) {
-                            appCtx.toastOnUi("未获取到资源链接")
-                            // 加载失败时清空歌词
-                            durLyric = null
-                            callback?.upLyric(null)
-                        } else {
-                            contentLoadFinish(chapter, content, generation, bookUrl, index)
-                        }
-                    }.onError { error ->
-                        if (!isCurrentPlayUrlRequest(generation, bookUrl, index)) return@onError
-                        AppLog.put("获取资源链接出错\n$error", error, true)
-                        upLoading(false)
-                        // 加载失败时清空歌词
-                        durLyric = null
-                        callback?.upLyric(null)
-                    }.onCancel {
-                        removeLoading(bookUrl, index)
-                        if (!isCurrentPlayUrlRequest(generation, bookUrl, index)) return@onCancel
-                        // 取消加载时清空歌词
-                        durLyric = null
-                        callback?.upLyric(null)
-                    }.onFinally {
-                        removeLoading(bookUrl, index)
-                    }
-            } else {
-                removeLoading(bookUrl, index)
-                appCtx.toastOnUi("book or source is null")
-            }
-        }
-    }
+        if (!addLoading(bookUrl, index)) return
 
-    /**
-     * 加载完成
-     */
-    private fun contentLoadFinish(
-        chapter: BookChapter,
-        content: String,
-        generation: Long,
-        bookUrl: String,
-        index: Int,
-    ) {
-        if (isCurrentPlayUrlRequest(generation, bookUrl, index) && chapter.index == index) {
-            durPlayUrl = content
-            durLyric = chapter.getVariable("lyric").takeIf { it.isNotBlank() }
-            upPlayUrl()
-            // 重新加载歌词，确保循环播放时歌词进度重置
-            callback?.upLyric(durLyric)
+        val generation = ++playUrlRequestGeneration
+        upDurChapter()
+        val chapter = durChapter
+        if (chapter == null) {
+            removeLoading(bookUrl, index)
+            upLoading(false)
+            return
         }
+        if (chapter.isVolume) {
+            removeLoading(bookUrl, index)
+            skipTo(index + 1)
+            return
+        }
+        upLoading(true)
+        WebBook.getContent(this, currentSource, currentBook, chapter)
+            .onSuccess { content ->
+                if (!isCurrentPlayUrlRequest(generation, bookUrl, index)) return@onSuccess
+                if (content.isEmpty()) {
+                    appCtx.toastOnUi("未获取到资源链接")
+                    durLyric = null
+                    callback?.upLyric(null)
+                    upLoading(false)
+                } else {
+                    contentLoadFinish(chapter, content, generation, bookUrl, index)
+                }
+            }.onError { error ->
+                if (!isCurrentPlayUrlRequest(generation, bookUrl, index)) return@onError
+                AppLog.put("获取资源链接出错\\n$error", error, true)
+                upLoading(false)
+                durLyric = null
+                callback?.upLyric(null)
+            }.onCancel {
+                removeLoading(bookUrl, index)
+                if (!isCurrentPlayUrlRequest(generation, bookUrl, index)) return@onCancel
+                durLyric = null
+                callback?.upLyric(null)
+                upLoading(false)
+            }.onFinally {
+                removeLoading(bookUrl, index)
+            }
     }
 
     private fun upPlayUrl() {
