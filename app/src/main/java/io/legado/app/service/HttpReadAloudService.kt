@@ -75,6 +75,7 @@ import io.legado.app.help.readaloud.playback.shouldRetryHttpTtsStreamOpen
 import io.legado.app.help.readaloud.playback.ReadAloudAudioStore
 import io.legado.app.help.readaloud.playback.SystemTtsFileSynthesizer
 import io.legado.app.help.readaloud.playback.TtsTextIndexStore
+import io.legado.app.help.readaloud.playback.TtsAudioFileGuard
 import io.legado.app.help.readaloud.playback.httpTtsAudioCacheSourceKey
 import io.legado.app.model.ReadAloud
 import io.legado.app.model.ReadBook
@@ -1726,6 +1727,8 @@ class HttpReadAloudService : BaseReadAloudService(),
 
     private fun downloadedSpeechItem(bookUrl: String?, synthesis: CueSynthesis): MediaItem? {
         val file = ReadAloudAudioStore.downloadedFile(bookUrl, synthesis.downloadedFileName) ?: return null
+        // Downloaded files may predate validation. Never hand a corrupt ID3 length to Media3.
+        if (TtsAudioFileGuard.validateId3Header(file) != null) return null
         val item = MediaItem.Builder().setUri(Uri.fromFile(file)).setTag(synthesis.position)
         if (synthesis.position.startFraction > 0.0) {
             // 下载区保存整段。句中续听按正文比例裁去已读部分，进度仍以剩余音频为准。
@@ -1904,8 +1907,20 @@ class HttpReadAloudService : BaseReadAloudService(),
      * 也不认无声占位：那是合成失败留下的空壳，认了就等于把这一句永久静音。
      */
     private fun hasSpeakFile(name: String): Boolean {
-        val file = speakFileForPlay(name)
-        return file.length() > 0L && !ReadAloudAudioStore.isSilentPlaceholder(file)
+        val downloaded = ReadAloudAudioStore.downloadedFile(bookSession.book?.bookUrl, name)
+        if (downloaded != null && TtsAudioFileGuard.validateId3Header(downloaded) == null) return true
+        val file = getSpeakFileAsMd5(name)
+        val invalid = TtsAudioFileGuard.validateId3Header(
+            file, TtsAudioFileGuard.MAX_SYNTHESIZED_AUDIO_BYTES
+        )
+        if (invalid != null) {
+            if (file.isFile) {
+                AppLog.put("移除异常朗读音频缓存：$invalid")
+                FileUtils.delete(file.absolutePath)
+            }
+            return false
+        }
+        return !ReadAloudAudioStore.isSilentPlaceholder(file)
     }
 
     /** Whether a playable cache file (rather than a downloaded copy) exists locally. */
@@ -1921,8 +1936,16 @@ class HttpReadAloudService : BaseReadAloudService(),
      * 写入路径不走这里——清缓存、重新合成永远只落在缓存目录，下载区不会被覆盖。
      */
     private fun speakFileForPlay(name: String): File {
-        return ReadAloudAudioStore.downloadedFile(bookSession.book?.bookUrl, name)
-            ?: getSpeakFileAsMd5(name)
+        val downloaded = ReadAloudAudioStore.downloadedFile(bookSession.book?.bookUrl, name)
+        if (downloaded != null && TtsAudioFileGuard.validateId3Header(downloaded) == null) return downloaded
+        val cached = getSpeakFileAsMd5(name)
+        if (cached.isFile && TtsAudioFileGuard.validateId3Header(
+                cached, TtsAudioFileGuard.MAX_SYNTHESIZED_AUDIO_BYTES
+            ) != null
+        ) {
+            FileUtils.delete(cached.absolutePath)
+        }
+        return cached
     }
 
     private fun getSpeakFileAsMd5(name: String): File {
@@ -1941,7 +1964,11 @@ class HttpReadAloudService : BaseReadAloudService(),
      * 直接报 Source error 把整句跳过（错误类型 UnrecognizedInputFormatException）。
      */
     private fun commitSpeakPart(name: String, part: File): Boolean {
-        if (part.length() <= 0L) {
+        val invalidAudio = TtsAudioFileGuard.validateId3Header(
+            part, TtsAudioFileGuard.MAX_SYNTHESIZED_AUDIO_BYTES
+        )
+        if (invalidAudio != null) {
+            AppLog.put("朗读合成文件校验失败：$invalidAudio")
             FileUtils.delete(part.absolutePath)
             return false
         }
