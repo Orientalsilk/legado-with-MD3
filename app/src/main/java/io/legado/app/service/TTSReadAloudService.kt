@@ -936,6 +936,7 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
             )
             val spoken = pendingUtterances.remove(id)
             if (resumeIfCutShort(cue, id, spoken, "引擎报错")) return@postTtsCallback
+            if (retryCueWithoutRange(cue, id, "引擎报错")) return@postTtsCallback
             finishCue(cue, id, "引擎报错($errorCode)")
         }
 
@@ -945,7 +946,24 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
             LogUtils.d(TAG, "onError nowSpeak:$nowSpeak pageIndex:$pageIndex s:$s")
             val spoken = pendingUtterances.remove(s)
             if (resumeIfCutShort(cue, s, spoken, "引擎报错")) return@postTtsCallback
+            if (retryCueWithoutRange(cue, s, "引擎报错")) return@postTtsCallback
             finishCue(cue, s, "未带错误码")
+        }
+
+        /**
+         * 引擎尚未提供可用范围进度就报错时，不要直接把当前句当作已念完。
+         * 与 onStop 的恢复策略一致：从句首有限次重试，避免偶发合成错误造成漏句。
+         */
+        private fun retryCueWithoutRange(cue: Int, utteranceId: String, reason: String): Boolean {
+            if (cue != nowSpeak || pause) return false
+            val progress = speechProgress[utteranceId] ?: return false
+            if (progress.sawRange || respeakTries >= MAX_RESPEAK_TRIES) return false
+            speechProgress.remove(utteranceId)
+            respeakTries++
+            paragraphStartPos = progress.startPos
+            AppLog.put("朗读$reason且没有进度回调，从本句开头恢复（第 $respeakTries 次）")
+            play()
+            return true
         }
 
         /**
