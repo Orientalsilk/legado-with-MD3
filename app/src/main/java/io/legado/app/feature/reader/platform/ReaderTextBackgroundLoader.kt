@@ -145,11 +145,13 @@ object ReaderTextBackgroundLoader {
         requestedWidth: Int,
         requestedHeight: Int,
     ): Int {
+        val targetWidth = requestedWidth.coerceAtLeast(1)
+        val targetHeight = requestedHeight.coerceAtLeast(1)
         var sample = 1
-        if (height > requestedHeight || width > requestedWidth) {
-            val halfHeight = height / 2
-            val halfWidth = width / 2
-            while (halfHeight / sample >= requestedHeight && halfWidth / sample >= requestedWidth) sample *= 2
+        // Bound both decoded dimensions. Using AND here leaves very wide or tall images at
+        // full resolution whenever their other axis already fits the viewport.
+        while (width / sample > targetWidth || height / sample > targetHeight) {
+            sample *= 2
         }
         return sample
     }
