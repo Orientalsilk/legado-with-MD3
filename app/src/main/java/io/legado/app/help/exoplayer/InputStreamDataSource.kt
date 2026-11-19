@@ -9,8 +9,6 @@ import java.io.EOFException
 import java.io.IOException
 import java.io.InputStream
 import kotlin.math.min
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 
 
 @SuppressLint("UnsafeOptInUsageError")
@@ -26,12 +24,10 @@ class InputStreamDataSource(private val supplier: () -> InputStream) : BaseDataS
         transferInitializing(dataSpec)
 
         try {
-            runBlocking(Dispatchers.IO) {
-                inputStream = supplier.invoke()
-                inputStream!!.skip(dataSpec.position)
-            }
+            inputStream = supplier.invoke()
+            inputStream!!.skip(dataSpec.position)
         } catch (error: Throwable) {
-            try { runBlocking(Dispatchers.IO) { inputStream?.close() } } finally { inputStream = null }
+            try { inputStream?.close() } finally { inputStream = null }
             throw error
         }
 
@@ -56,9 +52,7 @@ class InputStreamDataSource(private val supplier: () -> InputStream) : BaseDataS
             if (bytesRemaining == C.LENGTH_UNSET.toLong()) readLength
             else min(bytesRemaining, readLength.toLong()).toInt()
 
-        val bytesRead = runBlocking(Dispatchers.IO) {
-            inputStream!!.read(buffer, offset, bytesToRead)
-        }
+        val bytesRead = inputStream!!.read(buffer, offset, bytesToRead)
 
         if (bytesRead == -1) {
             if (bytesRemaining != C.LENGTH_UNSET.toLong()) {
@@ -82,7 +76,7 @@ class InputStreamDataSource(private val supplier: () -> InputStream) : BaseDataS
             return
         }
         try {
-            runBlocking(Dispatchers.IO) { inputStream?.close() }
+            inputStream?.close()
         } finally {
             inputStream = null
             opened = false
