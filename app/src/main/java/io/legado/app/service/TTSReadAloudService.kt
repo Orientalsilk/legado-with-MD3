@@ -935,6 +935,7 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
                 "onError nowSpeak:$nowSpeak pageIndex:$pageIndex utteranceId:$id errorCode:$errorCode"
             )
             val spoken = pendingUtterances.remove(id)
+            if (rebuildWindowAfterPrefetchFailure(cue)) return@postTtsCallback
             if (resumeIfCutShort(cue, id, spoken, "引擎报错")) return@postTtsCallback
             if (retryCueWithoutRange(cue, id, "引擎报错")) return@postTtsCallback
             finishCue(cue, id, "引擎报错($errorCode)")
@@ -945,9 +946,21 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
             val cue = liveCueOf(s) ?: return@postTtsCallback
             LogUtils.d(TAG, "onError nowSpeak:$nowSpeak pageIndex:$pageIndex s:$s")
             val spoken = pendingUtterances.remove(s)
+            if (rebuildWindowAfterPrefetchFailure(cue)) return@postTtsCallback
             if (resumeIfCutShort(cue, s, spoken, "引擎报错")) return@postTtsCallback
             if (retryCueWithoutRange(cue, s, "引擎报错")) return@postTtsCallback
             finishCue(cue, s, "未带错误码")
+        }
+
+        /**
+         * 预取句在游标到达前就报错，不能按完成句处理，否则之后推进游标时会漏读。
+         * 作废旧会话并从当前句重建窗口，让失败的预取句重新提交。
+         */
+        private fun rebuildWindowAfterPrefetchFailure(cue: Int): Boolean {
+            if (!hasSpeechPlaybackQueue || cue == nowSpeak) return false
+            AppLog.put("朗读预取句在轮到它之前报错，正在重建当前朗读窗口")
+            if (!pause) play()
+            return true
         }
 
         /**
