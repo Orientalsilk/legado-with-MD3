@@ -15,7 +15,7 @@ class GuardedTtsAudioInputStreamTest {
     }
 
     @Test fun rejectsOversizedSynchsafeId3Header() {
-        val header = byteArrayOf('I'.code.toByte(), 'D'.code.toByte(), '3'.code.toByte(), 4, 0, 0, 0, 0x20, 0, 0)
+        val header = byteArrayOf('I'.code.toByte(), 'D'.code.toByte(), '3'.code.toByte(), 4, 0, 0, 0, 0x02, 0, 0)
         val error = runCatching { GuardedTtsAudioInputStream(ByteArrayInputStream(header)) }.exceptionOrNull()
         assertTrue(error is IOException)
         assertTrue(error?.message.orEmpty().contains("ID3 metadata too large"))
