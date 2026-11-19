@@ -129,7 +129,8 @@ class IdentifyBookCharactersUseCase(
                         ?: preset.params.reasoningLevel,
                 ),
                 toolContext = AiToolContext(bookUrl = bookUrl),
-            )
+            ),
+            emitIntermediateContent = false,
         ).collect { event ->
             when (event) {
                 is io.legado.app.domain.gateway.AiStreamEvent.Content -> response.append(event.text)
