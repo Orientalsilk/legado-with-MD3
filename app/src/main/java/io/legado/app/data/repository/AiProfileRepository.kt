@@ -437,23 +437,23 @@ class AiProfileRepository(
         if (json.isNullOrBlank()) return AiGenerationParams()
         return runCatching {
             GSON.fromJson(json, AiGenerationParams::class.java)
-        }.getOrDefault(AiGenerationParams())
+        }.getOrNull() ?: AiGenerationParams()
     }
 
     private fun parseRuntimeOptions(json: String?): AiTaskRuntimeOptions {
         if (json.isNullOrBlank()) return AiTaskRuntimeOptions()
         return runCatching {
             GSON.fromJson(json, AiTaskRuntimeOptions::class.java)
-        }.getOrDefault(AiTaskRuntimeOptions())
+        }.getOrNull() ?: AiTaskRuntimeOptions()
     }
 
     private fun parseHeaders(json: String?): Map<String, String> {
         if (json.isNullOrBlank()) return emptyMap()
         return runCatching {
             @Suppress("UNCHECKED_CAST")
-            GSON.fromJson(json, Map::class.java)
-                .mapKeys { it.key.toString() }
-                .mapValues { it.value.toString() }
+            val parsed = GSON.fromJson(json, Map::class.java) ?: return emptyMap()
+            parsed.mapKeys { it.key.toString() }
+                .mapValues { it.value?.toString().orEmpty() }
         }.getOrDefault(emptyMap())
     }
 
