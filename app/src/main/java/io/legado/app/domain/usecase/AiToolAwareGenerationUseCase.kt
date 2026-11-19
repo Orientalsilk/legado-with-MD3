@@ -26,7 +26,10 @@ class AiToolAwareGenerationUseCase(
             .ifEmpty { error("AI returned empty text") }
     }
 
-    fun generateStream(request: AiGenerateRequest): Flow<AiStreamEvent> = flow {
+    fun generateStream(
+        request: AiGenerateRequest,
+        emitIntermediateContent: Boolean = true,
+    ): Flow<AiStreamEvent> = flow {
         var currentRequest = request.withReadOnlyTools()
         while (true) {
             val toolTrace = ToolTraceBuilder()
@@ -36,11 +39,8 @@ class AiToolAwareGenerationUseCase(
             aiTextGateway.generateStream(currentRequest).collect { event ->
                 when (event) {
                     is AiStreamEvent.Content -> {
-                        // A provider may emit explanatory text in the same round as tool calls.
-                        // That text is not the final answer; forwarding it makes structured tasks
-                        // concatenate intermediate prose/JSON with the post-tool response.
-                        // Buffer each round and publish content only after confirming it is final.
                         roundContent.append(event.text)
+                        if (emitIntermediateContent) emit(event)
                     }
 
                     is AiStreamEvent.Reasoning -> emit(event)
@@ -53,7 +53,9 @@ class AiToolAwareGenerationUseCase(
 
             val toolCalls = toolTrace.pendingToolCalls()
             if (toolCalls.isEmpty()) {
-                if (roundContent.isNotEmpty()) emit(AiStreamEvent.Content(roundContent.toString()))
+                if (!emitIntermediateContent && roundContent.isNotEmpty()) {
+                    emit(AiStreamEvent.Content(roundContent.toString()))
+                }
                 return@flow
             }
 
