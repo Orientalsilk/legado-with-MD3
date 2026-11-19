@@ -633,15 +633,8 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
     }
 
     /**
-     * 切换系统 TTS 音色，返回本句是否真的换了声音。
-     *
-     * 只按名字在 tts.voices 里找、找不到就返回是不行的：引擎报不出默认音色名
-     * （`defaultVoice` 为 null 时名字是空串）或被分配的音色已被改名/删除时，切换会静默
-     * 失败，上一个角色的音色一直挂着，之后的旁白也用角色的声音读。所以这些情况必须
-     * 走 [restoreDefaultVoice] 退回引擎默认。
-     *
-     * 已保存的 speakerId 就是引擎原始 Voice.name；直接按名称交给引擎，
-     * 不调用 tts.voices 全量枚举，避免 MultiTTS Binder 回包过大导致卡住或回空表。
+     * 已保存的 speakerId 就是引擎原始 Voice.name，直接按名称切换。
+     * 不枚举 tts.voices，避免 MultiTTS Binder 回包过大导致卡住或返回空表。
      */
     private fun applyVoice(voiceName: String): Boolean {
         val tts = textToSpeech ?: return false
