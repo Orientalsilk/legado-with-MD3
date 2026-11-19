@@ -740,7 +740,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                 routedVoice, cue, content, prepared.chapterTitle, httpTts, fileName
             )
         ) {
-            return finishAudioDownloadSentence(bookUrl, fileName, generation)
+            return finishAudioDownloadSentence(bookUrl, fileName, generation, counters)
         }
         // 合成失败就什么都不写。落一份无声占位当「下载成功」，这一句以后永远
         // 播空白：朗读侧在缓存里认到同名文件就不再重新合成，下载区那份又优先
