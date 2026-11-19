@@ -322,15 +322,17 @@ data class Book(
         config.startDate = startDate?.toString()
     }
 
+    /**
+     * 返回已经保存的起始日。模拟追读开关关掉时也要把原日期读出来，
+     * 否则设置页会显示成今天，点确定就把用户设过的日期覆盖掉。
+     * 非法字符串（例如旧数据里的 `0001-00-00`）按未设置处理，避免日期解析把界面打崩。
+     */
     fun getStartDate(): LocalDate? {
-        if (!config.readSimulating || config.startDate == null) {
-            return LocalDate.now()
-        }
+        val raw = config.startDate ?: return null
         return try {
-            LocalDate.parse(config.startDate)
-        } catch (e: Exception) {
-            println("解析日期失败: ${config.startDate}, 错误: ${e.message}")
-            LocalDate.now()
+            LocalDate.parse(raw)
+        } catch (_: Exception) {
+            null
         }
     }
 
