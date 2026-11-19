@@ -41,6 +41,7 @@ import io.legado.app.domain.gateway.ThemeSettingsGateway
 import io.legado.app.domain.model.readaloud.ReadAloudSessionStatus
 import io.legado.app.domain.model.readaloud.ReadAloudProgress
 import io.legado.app.domain.model.settings.ReadAloudTimerMode
+import io.legado.app.domain.model.AiReasoningLevel
 import io.legado.app.domain.usecase.AiTextFactoryUseCase
 import io.legado.app.domain.usecase.ChangeBookSourceUseCase
 import io.legado.app.domain.usecase.CleanSelectedTextUseCase
@@ -64,6 +65,9 @@ import io.legado.app.help.book.isMarkdown
 import io.legado.app.help.book.isMobi
 import io.legado.app.help.book.removeType
 import io.legado.app.help.config.ReadBookConfig
+import io.legado.app.ui.config.readConfig.ReadConfig
+import io.legado.app.help.readaloud.cast.AiCastPresetStore
+import io.legado.app.help.readaloud.cast.VoicePoolStore
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.source.getSourceType
 import io.legado.app.model.ImageProvider
@@ -85,6 +89,7 @@ import io.legado.app.ui.book.searchContent.SearchResult
 import io.legado.app.utils.GSON
 import io.legado.app.utils.ImageSaveUtils
 import io.legado.app.utils.NetworkUtils
+import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.isAbsUrl
 import io.legado.app.utils.isTrue
 import io.legado.app.utils.openUrl
@@ -105,6 +110,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 private const val READER_SYNC_MIN_INTERVAL_MS = 250L
@@ -624,6 +631,67 @@ class ReadBookViewModel(
 
     private var pendingBooksDirReloadChapterList: Boolean = false
     private var deferredReaderFeaturesStarted = false
+
+    /** 自动逐章分析串行执行，避免快速翻章时多个 AI 请求争抢同一本书的角色记忆。 */
+    private val autoCastAnalysisMutex = Mutex()
+    private val autoCastScheduledChapters = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    /**
+     * 阅读器确认当前章节正文已装载后调用。只分析当前章，不预读整本书；
+     * 下一章成为当前章时再触发下一次。结果直接走现有角色/声音池/音色绑定链路。
+     */
+    fun onReaderChapterReady(chapter: BookChapter) {
+        val book = ReadBook.book ?: return
+        if (book.bookUrl.isBlank() || chapter.bookUrl != book.bookUrl) return
+        if (!ReadConfig.multiRoleCast && !ReadConfig.useMultiSpeaker) return
+
+        val fingerprint = MD5Utils.md5Encode("${chapter.url}| ${chapter.title}")
+        val taskKey = "${book.bookUrl}|${chapter.index}|$fingerprint"
+        if (!autoCastScheduledChapters.add(taskKey)) return
+
+        viewModelScope.launch(IO) {
+            try {
+                autoCastAnalysisMutex.withLock {
+                    if (AiCastPresetStore.isAutoChapterAnalyzed(
+                            book.bookUrl, chapter.index, fingerprint,
+                        )
+                    ) return@withLock
+
+                    // 没有启用声音池就不发起 AI 请求，避免生成无法落地的分配。
+                    if (VoicePoolStore.enabledPoolNames().isEmpty()) {
+                        AppLog.putDebug("自动人物分析跳过：没有启用的声音池（${chapter.title}）")
+                        return@withLock
+                    }
+
+                    var chapterFailed = false
+                    val result = aiCastAssignUseCase.execute(
+                        book = book,
+                        startChapter = chapter.index,
+                        chapterCount = 1,
+                        reassign = false,
+                        reasoningLevel = AiReasoningLevel.OFF,
+                        onProgress = { _, _, _, _, error ->
+                            if (error != null) chapterFailed = true
+                        },
+                    )
+                    if (result.isSuccess && !chapterFailed) {
+                        AiCastPresetStore.markAutoChapterAnalyzed(
+                            book.bookUrl, chapter.index, fingerprint,
+                        )
+                        AppLog.putDebug("自动人物与音色分析完成：${chapter.title}")
+                    } else {
+                        AppLog.put("自动人物与音色分析失败：${chapter.title}", result.exceptionOrNull(), true)
+                    }
+                }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                AppLog.put("自动人物与音色分析异常：${chapter.title}", e, true)
+            } finally {
+                autoCastScheduledChapters.remove(taskKey)
+            }
+        }
+    }
 
     val isInitFinish: Boolean get() = _uiState.value.isInitFinish
 
