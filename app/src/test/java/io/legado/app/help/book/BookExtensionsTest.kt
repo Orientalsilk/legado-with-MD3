@@ -3,7 +3,12 @@ package io.legado.app.help.book
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.HighlightTagRule
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 class BookExtensionsTest {
 
@@ -46,5 +51,34 @@ class BookExtensionsTest {
         assertEquals(listOf("优先", "次要"), highlighted.map { it.title })
         assertEquals(listOf(listOf("奇幻"), listOf("动作")), highlighted.map { it.matchedLabels })
         assertEquals(listOf("普通"), regular)
+    }
+
+    @Test
+    fun getStartDate_keepsSavedDateEvenWhenSimulatingIsOff() {
+        val book = Book()
+        book.setReadSimulating(false)
+        book.setStartDate(LocalDate.of(2030, 1, 2))
+
+        assertEquals(LocalDate.of(2030, 1, 2), book.getStartDate())
+    }
+
+    @Test
+    fun getStartDate_invalidLegacyValueDoesNotThrowOrBecomeToday() {
+        val book = Book()
+        book.setReadSimulating(true)
+        book.config.startDate = "0001-00-00"
+
+        assertNull(book.getStartDate())
+    }
+
+    @Test
+    fun datePickerRoundTripDoesNotShiftADayAheadOfUtc() {
+        val date = LocalDate.of(2026, 11, 19)
+        assertEquals(date, pickerMillisToLocalDate(localDateToPickerMillis(date)))
+
+        val shownAsUtc = Instant.ofEpochMilli(
+            date.atStartOfDay(ZoneId.of("Asia/Shanghai")).toInstant().toEpochMilli()
+        ).atZone(ZoneOffset.UTC).toLocalDate()
+        assertEquals(LocalDate.of(2026, 11, 18), shownAsUtc)
     }
 }
