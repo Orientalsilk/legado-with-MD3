@@ -97,4 +97,22 @@ class ReadAloudAudioStoreProgressTest {
         assertTrue(progress.running)
     }
 
+    @Test
+    fun `download counters are isolated between canceled and replacement runs`() {
+        val oldRun = ReadAloudAudioStore.DownloadCounters()
+        val newRun = ReadAloudAudioStore.DownloadCounters()
+        oldRun.sentenceDone.incrementAndGet()
+        oldRun.failed.incrementAndGet()
+        oldRun.failed.incrementAndGet()
+
+        assertEquals(0, newRun.sentenceDone.get())
+        assertEquals(0, newRun.failed.get())
+        newRun.sentenceDone.incrementAndGet()
+        newRun.failed.incrementAndGet()
+        assertEquals(1, oldRun.sentenceDone.get())
+        assertEquals(2, oldRun.failed.get())
+        assertEquals(1, newRun.sentenceDone.get())
+        assertEquals(1, newRun.failed.get())
+    }
+
 }
