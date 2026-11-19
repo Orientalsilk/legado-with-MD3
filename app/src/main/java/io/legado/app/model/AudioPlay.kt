@@ -155,14 +155,13 @@ object AudioPlay : CoroutineScope by MainScope() {
      * 不能再修改新章节的播放状态。
      */
     private fun cancelPlayUrlRequest() {
-        val requestKey: ChapterRequestKey?
-        val request: Coroutine<String>?
-        synchronized(this) {
-            requestKey = playUrlRequestKey
-            request = playUrlRequest
+        val (requestKey, request) = synchronized(this) {
+            val key = playUrlRequestKey
+            val task = playUrlRequest
             playUrlRequestKey = null
             playUrlRequest = null
             playUrlRequestGeneration++
+            key to task
         }
         if (requestKey != null || request != null) {
             requestKey?.let(::removeLoading)
