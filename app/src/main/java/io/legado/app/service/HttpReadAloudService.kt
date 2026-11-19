@@ -744,7 +744,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                 routedVoice, cue, content, prepared.chapterTitle, httpTts, fileName
             )
         ) {
-            return finishAudioDownloadSentence(bookUrl, fileName)
+            return finishAudioDownloadSentence(bookUrl, fileName, generation)
         }
         // 合成失败就什么都不写。落一份无声占位当「下载成功」，这一句以后永远
         // 播空白：朗读侧在缓存里认到同名文件就不再重新合成，下载区那份又优先
@@ -859,7 +859,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         val task = audioDownloadTask
         audioDownloadTask = null
         task?.cancel()
-        ReadAloudAudioStore.finishProgress()
+        ReadAloudAudioStore.finishProgress(audioDownloadGeneration)
         notificationManager.cancel(NotificationId.ReadAloudAudioDownload)
         // 完成回调被上面的身份判断挡掉了（这里已经把 task 置空），
         // 所以「只为下载而起的服务」得在这一条路上自己收，否则又是僵尸服务
