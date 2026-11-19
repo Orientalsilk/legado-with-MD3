@@ -167,7 +167,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
         /** 播放页收起后等待的时长：期间若重新展开（听书 ⇄ 朗读切换）就不还原本地系统栏状态。 */
         private const val SYSTEM_BARS_RESTORE_DELAY_MILLIS = 200L
 
-        private val startupUpdateCheckGate = ProcessStartupUpdateCheckGate()
 
         @Volatile
         var hasActiveReadBookRoute: Boolean = false
@@ -442,9 +441,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
         super.onCreate(savedInstanceState)
 
         if (checkStartupRoute()) return
-        val shouldAutoCheckUpdate = startupUpdateCheckGate.consume(
-            otherSettingsGateway.currentSettings.autoCheckUpdateOnStart
-        )
 
         // 智能自启：如果上次是手动开启状态（web_service_auto 为 true），则自启；
         // 本地网络权限缺失时先申请，磁贴等入口也通过该 extra 转发到这里。
@@ -465,11 +461,6 @@ open class MainActivity : BaseComposeActivity(), AudioPlay.CallBack {
 
         lifecycleScope.launch {
             // 有新版本先提示更新，用户关闭后再走版本更新日志，避免两个弹窗叠在一起
-            if (shouldAutoCheckUpdate) {
-                checkUpdateOnStart()
-            }
-            //版本更新
-            upVersion()
             //备份同步
             backupSync()
             //自动更新书籍
