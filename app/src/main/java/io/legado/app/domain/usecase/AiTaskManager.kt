@@ -1,6 +1,7 @@
 package io.legado.app.domain.usecase
 
 import io.legado.app.data.entities.AiArtifact
+import io.legado.app.constant.AppLog
 import io.legado.app.domain.gateway.AiArtifactGateway
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -83,6 +84,9 @@ class AiTaskManager(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Throwable) {
+                // UI 只展示 localizedMessage，空指针这类错误没有堆栈就无法定位具体调用点。
+                // 保留完整异常到应用日志，避免把真正故障压缩成一行通用提示。
+                AppLog.put("AI 任务失败: ${artifact.taskType} (${artifact.bookUrl})", error, true)
                 val failed = artifact.copy(
                     status = AiArtifact.STATUS_FAILED,
                     errorMessage = error.localizedMessage ?: error.javaClass.simpleName,
