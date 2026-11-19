@@ -43,6 +43,7 @@ import io.legado.app.R
 import io.legado.app.domain.gateway.AiProfileGateway
 import io.legado.app.domain.model.AiReasoningLevel
 import io.legado.app.domain.model.AiTaskType
+import io.legado.app.help.readaloud.cast.OFFLINE_PRESET_ID
 import io.legado.app.help.readaloud.cast.AiCastPresetStore
 import io.legado.app.help.readaloud.cast.AiCastPresetUi
 import io.legado.app.help.readaloud.cast.AiCastProgress
@@ -228,8 +229,9 @@ fun AiCastDialogSheet(
     var selectedPresetId by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(presets) {
         val cur = selectedPresetId
-        if (cur == null || presets.none { it.id == cur }) {
-            selectedPresetId = presets.firstOrNull()?.id
+        if (cur == null || (cur != OFFLINE_PRESET_ID && presets.none { it.id == cur })) {
+            // 默认走免费的离线分配；AI 预设需要时手动点选
+            selectedPresetId = OFFLINE_PRESET_ID
         }
     }
     var temporary by remember { mutableStateOf("") }
@@ -610,19 +612,18 @@ fun AiCastDialogSheet(
                             )
                         },
                     ) {
-                        if (presets.isEmpty()) {
-                            AppText(
-                                text = stringResource(R.string.ai_cast_no_preset),
-                                style = LegadoTheme.typography.bodyMedium,
-                                color = LegadoTheme.colorScheme.onSurfaceVariant,
-                            )
-                        } else {
+                        run {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .horizontalScroll(rememberScrollState()),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
+                                ToggleChip(
+                                    label = "离线（免费）",
+                                    selected = selectedPresetId == OFFLINE_PRESET_ID,
+                                    onToggle = { selectedPresetId = OFFLINE_PRESET_ID },
+                                )
                                 presets.forEach { preset ->
                                     ToggleChip(
                                         label = preset.name,
@@ -630,6 +631,13 @@ fun AiCastDialogSheet(
                                         onToggle = { selectedPresetId = preset.id },
                                     )
                                 }
+                            }
+                            if (selectedPresetId == OFFLINE_PRESET_ID) {
+                                AppText(
+                                    text = "不联网、不用 AI：按「某某说/道」和称呼里的性别、年龄词分配声音池，认不出说话人的句子按旁白读。",
+                                    style = LegadoTheme.typography.bodySmall,
+                                    color = LegadoTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                             presets.firstOrNull { it.id == selectedPresetId }?.let { preset ->
                                 AppText(

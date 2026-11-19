@@ -89,6 +89,7 @@ class AiCastAssignUseCase(
             requirement = preset?.instruction ?: AiCastPresetStore.DEFAULT_REQUIREMENT,
             temporaryInstruction = temporaryInstruction,
         )
+        val offline = presetId == OFFLINE_PRESET_ID
         val failed = ArrayList<Int>()
         var assignedChapters = 0
         for ((offset, index) in plan.withIndex()) {
@@ -97,7 +98,7 @@ class AiCastAssignUseCase(
             persistRunState(book.bookUrl, plan, index, failed)
             val error = runCatching {
                 assignChapter(
-                    book, toc, index, reassign, pools, systemPrompt, reasoningLevel, onStream,
+                    book, toc, index, reassign, pools, systemPrompt, reasoningLevel, onStream, offline,
                 )
             }.exceptionOrNull()
             // 取消不算失败：这一章没跑完，靠上面写下的 resumeChapter 续跑就够了
@@ -157,6 +158,7 @@ class AiCastAssignUseCase(
         systemPrompt: String,
         reasoningLevel: AiReasoningLevel,
         onStream: suspend (AiCastStream) -> Unit,
+        offline: Boolean = false,
     ) = withContext(Dispatchers.IO) {
         // isValidName 走标记语法，先装载用户配置的符号
         CastSyntaxStore.current()
@@ -191,9 +193,11 @@ class AiCastAssignUseCase(
         }
         val windows = buildWindows(paragraphs, anchors)
         if (windows.isEmpty()) return@withContext
-        val preset = aiProfileGateway.getTaskPreset(AiTaskType.IDENTIFY_CHARACTERS)
-            ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
-            ?: error("未配置 AI 模型，无法使用 AI 分配角色")
+        val preset = if (offline) null else (
+            aiProfileGateway.getTaskPreset(AiTaskType.IDENTIFY_CHARACTERS)
+                ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
+                ?: error("未配置 AI 模型，无法使用 AI 分配角色")
+            )
         onStream(AiCastStream.ChapterStart(chapter.title))
         // 场景头部取开头几段：只取第一段常常拿到一个光秃秃的章节号，对判断谁在说话毫无用处
         val scene = paragraphs.asSequence().filter { it.isNotBlank() }.take(SCENE_PARAGRAPHS)
@@ -221,6 +225,28 @@ class AiCastAssignUseCase(
         var bookMemory = appDb.bookCastMemoryDao.get(book.bookUrl)?.memory.orEmpty()
         var previousSpeakers = emptyList<AiCastPayload.Speaker>()
         for (window in windows) {
+            if (offline) {
+                // 离线分配：不联网、不用 AI，只按引号前后的「某某说」与称呼里的性别/年龄词判断；认不出的留空走旁白
+                val guesses = LocalCastGuesser.guess(
+                    excerpt = window.excerpt,
+                    pending = window.pending,
+                    known = known.filterNot { isPlaceholderName(it.name) }.map { row ->
+                        val profile = profiles.firstOrNull { it.id == row.id }
+                            ?: profiles.firstOrNull { it.name == row.name }
+                        LocalCastGuesser.Known(
+                            row.name, row.poolLabel,
+                            profile?.aliasNames().orEmpty().filter { it != row.name },
+                        )
+                    },
+                    pools = pools,
+                ).map { AiCastPayload.Assignment(it.ordinal, it.name, it.pool) }
+                writeAssignments(
+                    book.bookUrl, chapterIndex, window, guesses, pools, known,
+                    thoughtOrdinals, profiles,
+                )
+                continue
+            }
+            val preset = preset ?: error("未配置 AI 模型")
             val payload = AiCastPayload.Request(
                 pools = pools,
                 // 代词/「旁白」这类占位主名不送：契约要求「优先沿用已有主名」，
@@ -636,6 +662,9 @@ class AiCastAssignUseCase(
         }.getOrElse { error("AI 返回的 JSON 读不出来：${failureReason(it)}") }
     }
 }
+
+/** 「离线分配」的预设 id：不是真实预设，只是让界面与用例约定走本地规则。 */
+internal const val OFFLINE_PRESET_ID = "__offline__"
 
 /** 锚点标记：`⟦序号⟧` 插在开引号之后，正文里不会出现这两个括号，模型只需回序号。 */
 private const val ANCHOR_OPEN = "⟦"
