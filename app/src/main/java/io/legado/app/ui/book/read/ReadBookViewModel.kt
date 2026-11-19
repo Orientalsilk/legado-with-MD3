@@ -11,6 +11,7 @@ import io.legado.app.constant.AppLog
 import io.legado.app.constant.BookType
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PreferKey
+import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.BookProgress
@@ -652,11 +653,15 @@ class ReadBookViewModel(
         autoCastChapterWorker = viewModelScope.launch(IO) {
             for ((requestedBook, requestedChapter) in autoCastChapterRequests) {
                 analyzeReaderChapter(requestedBook, requestedChapter)
+                // 提前分好下一章：当前章 AI 返回时往往已经开始朗读，只有下一章才赶得上；
+                // 下一章还没下载就读不到正文，这里静默跳过，等它成为当前章再分析
+                val next = appDb.bookChapterDao.getChapter(requestedBook.bookUrl, requestedChapter.index + 1)
+                if (next != null) analyzeReaderChapter(requestedBook, next, quiet = true)
             }
         }
     }
 
-    private suspend fun analyzeReaderChapter(book: Book, chapter: BookChapter) {
+    private suspend fun analyzeReaderChapter(book: Book, chapter: BookChapter, quiet: Boolean = false) {
         val fingerprint = MD5Utils.md5Encode(
             "${chapter.url}|${chapter.title}|${chapter.tag.orEmpty()}",
         )
@@ -669,7 +674,7 @@ class ReadBookViewModel(
             // 只有池名还不够：默认池可能没有任何启用音色。没有真实可用音色时，
             // 不应为了最终无法落地的分配而调用 AI、消耗用户额度。
             if (VoicePoolStore.voicePoolMap().isEmpty()) {
-                AppLog.putDebug("自动人物分析跳过：没有可用的声音池音色（${chapter.title}）")
+                AppLog.put("自动人物分析跳过：没有可用的声音池音色（${chapter.title}）")
                 return
             }
 
@@ -692,10 +697,20 @@ class ReadBookViewModel(
                     book.bookUrl, chapter.index, fingerprint,
                 )
                 AppLog.putDebug("自动人物与音色分析完成：${chapter.title}")
-            } else {
-                AppLog.putDebug(
+            } else if (!quiet) {
+                AppLog.put(
                     "自动人物与音色分析失败：${chapter.title}（" +
-                        "${result.exceptionOrNull()?.localizedMessage ?: "章节处理未完成"}）",
+                        "${result.exceptionOrNull()?.localizedMessage ?: "章节处理未完成"}），改用离线分配",
+                )
+                // AI 没配好/断网/限额时不让这章整章念旁白：退到免费的离线分配（不记账，下次 AI 可再来）
+                aiCastAssignUseCase.execute(
+                    book = book,
+                    startChapter = chapter.index,
+                    chapterCount = 1,
+                    reassign = false,
+                    presetId = io.legado.app.help.readaloud.cast.OFFLINE_PRESET_ID,
+                    persistProgress = false,
+                    onProgress = { _, _, _, _, _ -> },
                 )
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
