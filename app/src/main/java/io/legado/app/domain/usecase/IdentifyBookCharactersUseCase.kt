@@ -144,51 +144,7 @@ class IdentifyBookCharactersUseCase(
                 }
             }
         }
-        val jsonStart = response.indexOf('{')
-        val jsonEnd = response.lastIndexOf('}')
-        require(jsonStart >= 0 && jsonEnd > jsonStart) {
-            "Character identification did not return a JSON object"
-        }
-        val rootElement = JsonParser.parseString(response.substring(jsonStart, jsonEnd + 1))
-        require(rootElement.isJsonObject) { "Character identification response must be a JSON object" }
-        val root = rootElement.asJsonObject
-        val characterArray = root.get("characters")
-            ?.takeIf { it.isJsonArray }
-            ?.asJsonArray
-            ?: error("Character identification JSON must contain a characters array")
-        // Models occasionally emit nulls or non-object entries despite the schema. Ignore those
-        // malformed entries and report a clear error if no valid character survives.
-        val candidates = characterArray.mapNotNull { element ->
-            if (!element.isJsonObject) return@mapNotNull null
-            val item = element.asJsonObject
-            val name = item.get("name")
-                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
-                ?.asString?.trim().orEmpty()
-            val aliases = item.get("aliases")
-                ?.takeIf { it.isJsonArray }
-                ?.asJsonArray
-                ?.mapNotNull { alias ->
-                    alias.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
-                        ?.asString?.trim()
-                }
-                .orEmpty()
-            Candidate(
-                name = name,
-                aliases = aliases,
-                personality = item.get("personality")
-                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString.orEmpty(),
-                summary = item.get("summary")
-                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString.orEmpty(),
-                evidence = item.get("evidence")
-                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString.orEmpty(),
-                confidence = runCatching { item.get("confidence")?.asFloat }
-                    .getOrNull()?.coerceIn(0f, 1f) ?: 0f,
-            )
-        }.filter { it.name.isNotBlank() && it.confidence >= MIN_CONFIDENCE }
-            .distinctBy { it.name }
-        require(candidates.isNotEmpty()) {
-            "Character identification returned no valid characters; check the model JSON output"
-        }
+        val candidates = parseCharacterCandidates(response.toString())
         val now = System.currentTimeMillis()
         val contentHash = MD5Utils.md5Encode(bookUrl)
         val promptHash =
@@ -282,6 +238,57 @@ class IdentifyBookCharactersUseCase(
         fun defaultPrompt(): String =
             "You identify stable fictional characters from downloaded local chapters. Use read-only tools to list and read cached chapters and inspect existing characters. Return JSON only: {\"characters\":[{\"name\":string,\"aliases\":[string],\"personality\":string,\"summary\":string,\"evidence\":string,\"confidence\":number}]}. Describe only facts supported by the text. Do not infer voice gender, voice age, voice pool, or voice identity. Do not assign any TTS voice. Do not include pronouns, generic titles, or one-off passers-by. Do not create duplicates of existing names or aliases."
     }
+}
+
+
+/** Parse model output defensively: null/malformed list entries must not crash the task. */
+internal fun parseCharacterCandidates(
+    response: String,
+): List<IdentifyBookCharactersUseCase.Candidate> {
+    val jsonStart = response.indexOf('{')
+    val jsonEnd = response.lastIndexOf('}')
+    require(jsonStart >= 0 && jsonEnd > jsonStart) {
+        "Character identification did not return a JSON object"
+    }
+    val rootElement = JsonParser.parseString(response.substring(jsonStart, jsonEnd + 1))
+    require(rootElement.isJsonObject) { "Character identification response must be a JSON object" }
+    val root = rootElement.asJsonObject
+    val characterArray = root.get("characters")
+        ?.takeIf { it.isJsonArray }
+        ?.asJsonArray
+        ?: error("Character identification JSON must contain a characters array")
+    val candidates = characterArray.mapNotNull { element ->
+        if (!element.isJsonObject) return@mapNotNull null
+        val item = element.asJsonObject
+        val name = item.get("name")
+            ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+            ?.asString?.trim().orEmpty()
+        val aliases = item.get("aliases")
+            ?.takeIf { it.isJsonArray }
+            ?.asJsonArray
+            ?.mapNotNull { alias ->
+                alias.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                    ?.asString?.trim()
+            }
+            .orEmpty()
+        IdentifyBookCharactersUseCase.Candidate(
+            name = name,
+            aliases = aliases,
+            personality = item.get("personality")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString.orEmpty(),
+            summary = item.get("summary")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString.orEmpty(),
+            evidence = item.get("evidence")
+                ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString.orEmpty(),
+            confidence = runCatching { item.get("confidence")?.asFloat }
+                .getOrNull()?.coerceIn(0f, 1f) ?: 0f,
+        )
+    }.filter { it.name.isNotBlank() && it.confidence >= 0.65f }
+        .distinctBy { it.name }
+    require(candidates.isNotEmpty()) {
+        "Character identification returned no valid characters; check the model JSON output"
+    }
+    return candidates
 }
 
 
