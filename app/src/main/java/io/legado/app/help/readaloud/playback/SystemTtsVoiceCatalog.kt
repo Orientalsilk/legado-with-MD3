@@ -2,7 +2,6 @@ package io.legado.app.help.readaloud.playback
 
 import android.content.Context
 import android.speech.tts.TextToSpeech
-import android.speech.tts.Voice
 import io.legado.app.constant.AppLog
 import io.legado.app.domain.model.readaloud.TtsEngineDescriptor
 import io.legado.app.domain.model.readaloud.TtsEngineKind
