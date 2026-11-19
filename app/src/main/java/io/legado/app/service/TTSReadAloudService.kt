@@ -6,6 +6,7 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
+import android.speech.tts.Voice
 import android.speech.tts.UtteranceProgressListener
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
@@ -92,6 +93,9 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
     private var activeEngine = ""
     private var activeVoiceName = ""
 
+    /** 缓存当前引擎的真实 Voice 对象；转发器可能校验 Voice.name 之外的元数据。 */
+    private var voiceCatalogCache: Set<Voice>? = null
+
     /** 当前生效的是引擎自带默认音色（true = 没有沿用任何角色的声音） */
     private var voiceIsDefault = true
     private var initGeneration = 0
@@ -168,6 +172,7 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
         playAfterTtsInit = false
         activeVoiceName = ""
         voiceIsDefault = true
+        voiceCatalogCache = null
         appliedSpeechRate = -1f
         appliedPitch = -1f
         initGeneration++
@@ -196,10 +201,12 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
                 // 新初始化的引擎就停在它自己的默认音色上
                 activeVoiceName = ""
                 voiceIsDefault = true
+                voiceCatalogCache = null
                 appliedSpeechRate = -1f
                 appliedPitch = -1f
                 ttsInitFinish = true
                 upSpeechRate(reset = false)
+                execute { voiceCatalog() }
                 if (playAfterTtsInit) play()
             }
         } else {
@@ -633,16 +640,19 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
     }
 
     /**
-     * 已保存的 speakerId 就是引擎原始 Voice.name，直接按名称切换。
-     * 不枚举 tts.voices，避免 MultiTTS Binder 回包过大导致卡住或返回空表。
+     * 切换系统 TTS 音色，使用引擎真实返回的 Voice 对象。
+     * 某些转发器除了 name，还会依赖目录中的 locale/quality/features 元数据。
      */
     private fun applyVoice(voiceName: String): Boolean {
         val tts = textToSpeech ?: return false
-        if (voiceName.isBlank()) {
+        if (voiceName.isBlank()) return restoreDefaultVoice(tts)
+        if (!voiceIsDefault && voiceName == activeVoiceName) return false
+        val voice = voiceCatalog().firstOrNull { it.name == voiceName }
+        if (voice == null) {
+            AppLog.put("系统 TTS 找不到音色 $voiceName，改用默认音色")
             return restoreDefaultVoice(tts)
         }
-        if (!voiceIsDefault && voiceName == activeVoiceName) return false
-        if (tts.setVoice(syntheticSystemTtsVoice(voiceName)) == TextToSpeech.SUCCESS) {
+        if (tts.setVoice(voice) == TextToSpeech.SUCCESS) {
             voiceIsDefault = false
             activeVoiceName = voiceName
             return true
@@ -651,17 +661,24 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
         return false
     }
 
-    /** 退回引擎默认音色；Android TTS 不保证接受 null，必须先取真实默认 Voice。 */
+    /** 恢复引擎默认音色，沿用 Android TTS 的默认路由语义。 */
     private fun restoreDefaultVoice(tts: TextToSpeech): Boolean {
         if (voiceIsDefault && activeVoiceName.isEmpty()) return false
-        val defaultVoice = runCatching { tts.defaultVoice }.getOrNull()
-        if (defaultVoice != null && tts.setVoice(defaultVoice) == TextToSpeech.SUCCESS) {
+        if (tts.setVoice(null) == TextToSpeech.SUCCESS) {
             voiceIsDefault = true
             activeVoiceName = ""
             return true
         }
         AppLog.putDebug("系统 TTS 恢复默认音色失败")
         return false
+    }
+
+    private fun voiceCatalog(): Set<Voice> {
+        voiceCatalogCache?.let { return it }
+        val tts = textToSpeech ?: return emptySet()
+        val catalog = runCatching { tts.voices }.getOrNull().orEmpty()
+        if (catalog.isNotEmpty()) voiceCatalogCache = catalog
+        return catalog
     }
 
     /** 这一句要的语速/音高：角色自带预设优先，其余落到全局语速与变声器。 */
