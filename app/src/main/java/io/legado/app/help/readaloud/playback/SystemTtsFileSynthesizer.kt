@@ -57,9 +57,10 @@ class SystemTtsFileSynthesizer(
             ?: return@withLock fail(engine, voiceName, "引擎起不来（初始化失败）")
         if (voiceName.isNotBlank()) {
             val voices = catalog(instance)
-            val voice = voices.firstOrNull { it.name == voiceName } ?: return@withLock fail(
-                engine, voiceName, "这个音色不在引擎的音色表里（枚举到 ${voices.size} 个）",
-            )
+            val voice = voices.firstOrNull { it.name == voiceName }
+                ?: syntheticSystemTtsVoice(voiceName).also {
+                    AppLog.putDebug("系统 TTS 未能枚举完整音色表，尝试按已保存的音色名试听: $voiceName")
+                }
             if (instance.setVoice(voice) == TextToSpeech.ERROR) {
                 return@withLock fail(engine, voiceName, "引擎拒绝切到这个音色")
             }
