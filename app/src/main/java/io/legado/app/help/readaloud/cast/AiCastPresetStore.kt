@@ -704,6 +704,7 @@ object AiCastPresetStore {
         entries[chapterIndex] = fingerprint
         // 长篇连载可能有数万章，只保留最近 3000 个章节记录，避免 SharedPreferences 无限增长。
         val retained = entries.toSortedMap().entries
+            .toList()
             .takeLast(MAX_AUTO_ANALYZED_CHAPTERS)
             .joinToString(",") { "${it.key}:${it.value}" }
         prefs().edit().putString(autoChapterKey(bookUrl), retained).apply()
