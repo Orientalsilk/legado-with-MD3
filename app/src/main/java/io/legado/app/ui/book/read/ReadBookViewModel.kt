@@ -41,7 +41,6 @@ import io.legado.app.domain.gateway.ThemeSettingsGateway
 import io.legado.app.domain.model.readaloud.ReadAloudSessionStatus
 import io.legado.app.domain.model.readaloud.ReadAloudProgress
 import io.legado.app.domain.model.settings.ReadAloudTimerMode
-import io.legado.app.domain.model.AiReasoningLevel
 import io.legado.app.domain.usecase.AiTextFactoryUseCase
 import io.legado.app.domain.usecase.ChangeBookSourceUseCase
 import io.legado.app.domain.usecase.CleanSelectedTextUseCase
@@ -645,7 +644,7 @@ class ReadBookViewModel(
         if (book.bookUrl.isBlank() || chapter.bookUrl != book.bookUrl) return
         if (!ReadConfig.multiRoleCast && !ReadConfig.useMultiSpeaker) return
 
-        val fingerprint = MD5Utils.md5Encode("${chapter.url}| ${chapter.title}")
+        val fingerprint = MD5Utils.md5Encode("${chapter.url}|${chapter.title}|${chapter.tag.orEmpty()}")
         val taskKey = "${book.bookUrl}|${chapter.index}|$fingerprint"
         if (!autoCastScheduledChapters.add(taskKey)) return
 
@@ -669,7 +668,8 @@ class ReadBookViewModel(
                         startChapter = chapter.index,
                         chapterCount = 1,
                         reassign = false,
-                        reasoningLevel = AiReasoningLevel.OFF,
+                        reasoningLevel = ReadConfig.speechAnalysisReasoningLevel,
+                        persistProgress = false,
                         onProgress = { _, _, _, _, error ->
                             if (error != null) chapterFailed = true
                         },
@@ -680,7 +680,7 @@ class ReadBookViewModel(
                         )
                         AppLog.putDebug("自动人物与音色分析完成：${chapter.title}")
                     } else {
-                        AppLog.put("自动人物与音色分析失败：${chapter.title}", result.exceptionOrNull(), true)
+                        AppLog.putDebug("自动人物与音色分析失败：${chapter.title}（${result.exceptionOrNull()?.localizedMessage ?: "章节处理未完成"}）")
                     }
                 }
             } catch (e: kotlinx.coroutines.CancellationException) {
