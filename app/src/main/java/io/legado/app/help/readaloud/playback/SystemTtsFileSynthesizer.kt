@@ -3,7 +3,6 @@ package io.legado.app.help.readaloud.playback
 import android.content.Context
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import android.speech.tts.Voice
 import io.legado.app.constant.AppLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -37,14 +36,6 @@ class SystemTtsFileSynthesizer(
     private var tts: TextToSpeech? = null
     private var activeEngine = ""
 
-    /**
-     * 引擎音色表：一个引擎只枚举一次。
-     *
-     * `tts.voices` 是同步 binder 全量枚举，逐句合成时每一句都付一次就是句间停顿；
-     * 引擎换了（[ensureEngine] 重建）才作废。空表不缓存，避免引擎未就绪时锁死在默认音色。
-     */
-    private var voiceCatalog: Set<Voice>? = null
-
     suspend fun synthesize(
         engine: String,
         voiceName: String,
@@ -56,12 +47,9 @@ class SystemTtsFileSynthesizer(
         val instance = ensureEngine(engine)
             ?: return@withLock fail(engine, voiceName, "引擎起不来（初始化失败）")
         if (voiceName.isNotBlank()) {
-            val voices = catalog(instance)
-            val voice = voices.firstOrNull { it.name == voiceName }
-                ?: syntheticSystemTtsVoice(voiceName).also {
-                    AppLog.putDebug("系统 TTS 未能枚举完整音色表，尝试按已保存的音色名试听: $voiceName")
-                }
-            if (instance.setVoice(voice) == TextToSpeech.ERROR) {
+            // 不枚举 tts.voices：MultiTTS 可能因 Binder 回包过大而卡住或返回空表。
+            // 已保存的 speakerId 就是引擎原始 Voice.name，setVoice 最终按该名称路由。
+            if (instance.setVoice(syntheticSystemTtsVoice(voiceName)) == TextToSpeech.ERROR) {
                 return@withLock fail(engine, voiceName, "引擎拒绝切到这个音色")
             }
         }
@@ -137,16 +125,6 @@ class SystemTtsFileSynthesizer(
         tts?.shutdown()
         tts = null
         activeEngine = ""
-        voiceCatalog = null
-    }
-
-    /** 当前引擎的音色表，只在换引擎后重新枚举。 */
-    private fun catalog(instance: TextToSpeech): Set<Voice> {
-        voiceCatalog?.let { return it }
-        val loaded = runCatching { instance.voices }.getOrNull().orEmpty()
-        if (loaded.isEmpty()) return emptySet()
-        voiceCatalog = loaded
-        return loaded
     }
 
     private suspend fun ensureEngine(engine: String): TextToSpeech? {
@@ -163,7 +141,6 @@ class SystemTtsFileSynthesizer(
                         if (status == TextToSpeech.SUCCESS) {
                             tts = creating
                             activeEngine = engine
-                            voiceCatalog = null
                             continuation.resume(creating)
                         } else {
                             creating.shutdown()
