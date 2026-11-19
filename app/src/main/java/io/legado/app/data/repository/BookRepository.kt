@@ -118,10 +118,10 @@ class BookRepository(
     // 在失效信号上做查询前防抖需要手工维护每查询表集，SQL 演进时极易漏订阅
     // （错过的失效 = 静默脏书架）。故此入口保留结果级防抖：批量期间的重查询
     // 仍会发生，但下游排序/重组/分配已被合并——那是分配风暴的实际来源。
-    @OptIn(FlowPreview::class)
+    @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     fun flowBookShelfByGroup(groupId: Long): Flow<List<BookShelfItem>> {
         return bookDao.flowBookShelfByGroup(groupId)
-            .debounce(SHELF_INVALIDATE_DEBOUNCE_MS)
+            .debounceSkippingFirst(SHELF_INVALIDATE_DEBOUNCE_MS)
     }
 
     fun flowSystemGroupCounts(): Flow<List<GroupBookCount>> {
