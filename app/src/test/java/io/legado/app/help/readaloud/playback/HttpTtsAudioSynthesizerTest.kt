@@ -152,6 +152,15 @@ class HttpTtsAudioSynthesizerTest {
         input.close()
     }
 
+    @Test fun `stream startup retry policy is bounded and only retries transient connection failures`() {
+        assertEquals(60_000L, HTTP_TTS_STREAM_READ_TIMEOUT_MS)
+        assertEquals(1, HTTP_TTS_STREAM_OPEN_RETRY_LIMIT)
+        assertTrue(shouldRetryHttpTtsStreamOpen(java.net.SocketTimeoutException(), 0))
+        assertTrue(shouldRetryHttpTtsStreamOpen(java.net.ConnectException(), 0))
+        assertFalse(shouldRetryHttpTtsStreamOpen(java.net.SocketTimeoutException(), 1))
+        assertFalse(shouldRetryHttpTtsStreamOpen(java.io.IOException(), 0))
+    }
+
     @Test fun `missing source never sends its tone to another source`() = runBlocking {
         val source = source()
         repository.insert(source)
