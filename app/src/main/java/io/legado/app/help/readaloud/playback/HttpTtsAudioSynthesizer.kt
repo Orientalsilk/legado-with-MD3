@@ -161,9 +161,10 @@ internal fun httpTtsAudioCacheSourceKey(source: HttpTTS, voice: ReadAloudVoice, 
 
 /**
  * 流式朗读不能让一个无响应的 TTS 源占住 ExoPlayer 读取线程数分钟。
- * 读取间隔缩短到 60 秒；整段响应仍保留 10 分钟总时限，避免误伤正常长音频。
+ * 保留原有 5 分钟首包/读取窗口，避免 MultiTTS 转发、云端排队等慢源被提前判死；
+ * 整段响应另由 10 分钟总时限兜底。
  */
-internal const val HTTP_TTS_STREAM_READ_TIMEOUT_MS = 60_000L
+internal const val HTTP_TTS_STREAM_READ_TIMEOUT_MS = 300_000L
 
 /** 保留较长的整段响应窗口；单句合成可能需要持续传输数分钟。 */
 internal const val HTTP_TTS_STREAM_CALL_TIMEOUT_MS = 10 * 60_000L
