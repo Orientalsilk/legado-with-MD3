@@ -21,13 +21,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import io.legado.app.R
+import io.legado.app.help.book.localDateToPickerMillis
+import io.legado.app.help.book.pickerMillisToLocalDate
 import io.legado.app.model.ReadBook
 import io.legado.app.ui.widget.components.AppTextField
 import io.legado.app.ui.widget.components.alert.AppAlertDialog
 import io.legado.app.ui.widget.components.settingItem.TinySwitchSettingItem
-import java.time.Instant
 import java.time.LocalDate
-import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -104,8 +104,7 @@ fun SimulatedReadingSheet(
     )
 
     val datePickerState = rememberDatePickerState(
-        initialSelectedDateMillis = startDate.atStartOfDay(ZoneId.systemDefault()).toInstant()
-            .toEpochMilli(),
+        initialSelectedDateMillis = localDateToPickerMillis(startDate),
     )
     AppAlertDialog(
         show = showDatePicker,
@@ -114,9 +113,7 @@ fun SimulatedReadingSheet(
         confirmText = stringResource(R.string.ok),
         onConfirm = {
             datePickerState.selectedDateMillis?.let { millis ->
-                startDate = Instant.ofEpochMilli(millis)
-                    .atZone(ZoneId.systemDefault())
-                    .toLocalDate()
+                startDate = pickerMillisToLocalDate(millis)
             }
             showDatePicker = false
         },
