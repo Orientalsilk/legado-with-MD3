@@ -67,12 +67,16 @@ class SystemTtsVoiceCatalog(context: Context) {
             return null
         }
         return try {
-            withTimeoutOrNull(VOICE_CATALOG_TIMEOUT_MS) {
-                withContext(Dispatchers.IO) { runCatching { block(tts) }.getOrElse { error ->
-                    AppLog.putDebug("系统 TTS 音色目录读取失败: ${error.localizedMessage}")
-                    null
-                } }
-            }.also { if (it == null) AppLog.putDebug("系统 TTS 音色目录读取超时") }
+            val result = withTimeoutOrNull(VOICE_CATALOG_TIMEOUT_MS) {
+                withContext(Dispatchers.IO) { block(tts) }
+            }
+            if (result == null) AppLog.putDebug("系统 TTS 音色目录读取超时")
+            result
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            AppLog.putDebug("系统 TTS 音色目录读取失败: ${error.localizedMessage}")
+            null
         } finally {
             withContext(Dispatchers.Main.immediate) {
                 runCatching { tts.stop() }
