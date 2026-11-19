@@ -98,6 +98,7 @@ import kotlinx.collections.immutable.toImmutableList
 import kotlinx.collections.immutable.toImmutableMap
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -110,8 +111,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 private const val READER_SYNC_MIN_INTERVAL_MS = 250L
@@ -632,9 +631,12 @@ class ReadBookViewModel(
     private var pendingBooksDirReloadChapterList: Boolean = false
     private var deferredReaderFeaturesStarted = false
 
-    /** 自动逐章分析串行执行，避免快速翻章时多个 AI 请求争抢同一本书的角色记忆。 */
-    private val autoCastAnalysisMutex = Mutex()
-    private val autoCastScheduledChapters = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    /**
+     * 自动逐章分析使用 CONFLATED 队列：AI 正在处理当前章时快速翻过的章节只保留最新一章，
+     * 避免用户连翻目录后在后台排队消耗大量 token。
+     */
+    private val autoCastChapterRequests = Channel<Pair<Book, BookChapter>>(Channel.CONFLATED)
+    private var autoCastChapterWorker: Job? = null
 
     /**
      * 阅读器确认当前章节正文已装载后调用。只分析当前章，不预读整本书；
@@ -644,55 +646,61 @@ class ReadBookViewModel(
         val book = ReadBook.book ?: return
         if (book.bookUrl.isBlank() || chapter.bookUrl != book.bookUrl) return
         if (!ReadConfig.multiRoleCast && !ReadConfig.useMultiSpeaker) return
+        autoCastChapterRequests.trySend(book to chapter)
+        if (autoCastChapterWorker?.isActive == true) return
 
-        val fingerprint = MD5Utils.md5Encode("${chapter.url}|${chapter.title}|${chapter.tag.orEmpty()}")
-        val taskKey = "${book.bookUrl}|${chapter.index}|$fingerprint"
-        if (!autoCastScheduledChapters.add(taskKey)) return
-
-        viewModelScope.launch(IO) {
-            try {
-                autoCastAnalysisMutex.withLock {
-                    if (AiCastPresetStore.isAutoChapterAnalyzed(
-                            book.bookUrl, chapter.index, fingerprint,
-                        )
-                    ) return@withLock
-
-                    // 没有启用声音池就不发起 AI 请求，避免生成无法落地的分配。
-                    if (VoicePoolStore.enabledPoolNames().isEmpty()) {
-                        AppLog.putDebug("自动人物分析跳过：没有启用的声音池（${chapter.title}）")
-                        return@withLock
-                    }
-
-                    var chapterFailed = false
-                    val result = aiCastAssignUseCase.execute(
-                        book = book,
-                        startChapter = chapter.index,
-                        chapterCount = 1,
-                        reassign = false,
-                        reasoningLevel = AiReasoningLevel.entries.firstOrNull {
-                            it.storageValue == ReadConfig.speechAnalysisReasoningLevel
-                        } ?: AiReasoningLevel.OFF,
-                        persistProgress = false,
-                        onProgress = { _, _, _, _, error ->
-                            if (error != null) chapterFailed = true
-                        },
-                    )
-                    if (result.isSuccess && !chapterFailed) {
-                        AiCastPresetStore.markAutoChapterAnalyzed(
-                            book.bookUrl, chapter.index, fingerprint,
-                        )
-                        AppLog.putDebug("自动人物与音色分析完成：${chapter.title}")
-                    } else {
-                        AppLog.putDebug("自动人物与音色分析失败：${chapter.title}（${result.exceptionOrNull()?.localizedMessage ?: "章节处理未完成"}）")
-                    }
-                }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (e: Throwable) {
-                AppLog.put("自动人物与音色分析异常：${chapter.title}", e, true)
-            } finally {
-                autoCastScheduledChapters.remove(taskKey)
+        autoCastChapterWorker = viewModelScope.launch(IO) {
+            for ((requestedBook, requestedChapter) in autoCastChapterRequests) {
+                analyzeReaderChapter(requestedBook, requestedChapter)
             }
+        }
+    }
+
+    private suspend fun analyzeReaderChapter(book: Book, chapter: BookChapter) {
+        val fingerprint = MD5Utils.md5Encode(
+            "${chapter.url}|${chapter.title}|${chapter.tag.orEmpty()}",
+        )
+        try {
+            if (AiCastPresetStore.isAutoChapterAnalyzed(
+                    book.bookUrl, chapter.index, fingerprint,
+                )
+            ) return
+
+            // 没有启用声音池就不发起 AI 请求，避免生成无法落地的分配。
+            if (VoicePoolStore.enabledPoolNames().isEmpty()) {
+                AppLog.putDebug("自动人物分析跳过：没有启用的声音池（${chapter.title}）")
+                return
+            }
+
+            var chapterFailed = false
+            val result = aiCastAssignUseCase.execute(
+                book = book,
+                startChapter = chapter.index,
+                chapterCount = 1,
+                reassign = false,
+                reasoningLevel = AiReasoningLevel.entries.firstOrNull {
+                    it.storageValue == ReadConfig.speechAnalysisReasoningLevel
+                } ?: AiReasoningLevel.OFF,
+                persistProgress = false,
+                onProgress = { _, _, _, _, error ->
+                    if (error != null) chapterFailed = true
+                },
+            )
+            if (result.isSuccess && !chapterFailed) {
+                AiCastPresetStore.markAutoChapterAnalyzed(
+                    book.bookUrl, chapter.index, fingerprint,
+                )
+                AppLog.putDebug("自动人物与音色分析完成：${chapter.title}")
+            } else {
+                AppLog.putDebug(
+                    "自动人物与音色分析失败：${chapter.title}（" +
+                        "${result.exceptionOrNull()?.localizedMessage ?: "章节处理未完成"}）",
+                )
+            }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            AppLog.put("自动人物与音色分析异常：${chapter.title}", e, true)
         }
     }
 
