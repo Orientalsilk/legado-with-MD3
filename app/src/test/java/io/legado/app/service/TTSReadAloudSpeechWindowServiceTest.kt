@@ -165,6 +165,20 @@ class TTSReadAloudSpeechWindowServiceTest {
     }
 
     @Test
+    fun prefetchedCueErrorRebuildsWindowInsteadOfSkippingIt() {
+        play("A", "B")
+
+        assertNextSpoken("A")
+        val prefetched = assertNextSpoken("B")
+        engine.listener.onError(prefetched.id, TextToSpeech.ERROR_SYNTHESIS)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertNextSpoken("A")
+        assertNextSpoken("B")
+        assertEquals(0, service.nowSpeak)
+    }
+
+    @Test
     fun prefetchesOnlyCuesWithTheSameEngineState() {
         play("A", "B", "C", "D")
 
