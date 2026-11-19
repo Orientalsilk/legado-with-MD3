@@ -250,7 +250,7 @@ object AudioPlay : CoroutineScope by MainScope() {
             upLoading(false)
         }.onFinally {
             removeLoading(requestKey)
-            synchronized(this) {
+            synchronized(AudioPlay) {
                 if (playUrlRequestKey == requestKey) {
                     playUrlRequestKey = null
                     playUrlRequest = null
