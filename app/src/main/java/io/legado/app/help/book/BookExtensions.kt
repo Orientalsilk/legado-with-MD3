@@ -749,9 +749,8 @@ fun Book.simulatedTotalChapterNum(): Int {
             try {
                 val startDate = LocalDate.parse(startDateStr)
                 startDate.daysUntil(currentDate) + 1
-            } catch (e: Exception) {
-                println("解析起始日期失败: ${config.startDate}, 错误: ${e.message}")
-                1 // 解析失败时返回默认值1
+            } catch (_: Exception) {
+                1 // 解析失败时按 1 天，避免脏日期把后面的章节全部放开
             }
         } else {
             1 // 没有设置起始日期时返回默认值1
