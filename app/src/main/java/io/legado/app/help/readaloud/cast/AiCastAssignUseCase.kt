@@ -75,6 +75,8 @@ class AiCastAssignUseCase(
         endChapter: Int = -1,
         /** 只重跑这些章（失败重试）；非空时忽略 [startChapter] / [chapterCount] / [endChapter]。 */
         onlyChapters: List<Int> = emptyList(),
+        /** 后台自动逐章分析不应覆盖用户手动分配任务的续跑进度。 */
+        persistProgress: Boolean = true,
         onProgress: suspend (Int, String, Int, Int, String?) -> Unit,
         onStream: suspend (AiCastStream) -> Unit = { },
     ): Result<Int> {
@@ -95,7 +97,7 @@ class AiCastAssignUseCase(
         for ((offset, index) in plan.withIndex()) {
             // 开跑前一章先记下「跑到这儿了」：用户中途取消时这一章就是续分配的起点，
             // 悬浮窗关掉再打开也还在（见 AiCastPresetStore.AiCastRunState）
-            persistRunState(book.bookUrl, plan, index, failed)
+            if (persistProgress) persistRunState(book.bookUrl, plan, index, failed)
             val error = runCatching {
                 assignChapter(
                     book, toc, index, reassign, pools, systemPrompt, reasoningLevel, onStream, offline,
@@ -114,7 +116,9 @@ class AiCastAssignUseCase(
             )
         }
         // 整趟跑完：没有要续的章了，但失败清单要留着让重试按钮读
-        persistRunState(book.bookUrl, plan, AiCastPresetStore.NO_RESUME_CHAPTER, failed)
+        if (persistProgress) {
+            persistRunState(book.bookUrl, plan, AiCastPresetStore.NO_RESUME_CHAPTER, failed)
+        }
         if (assignedChapters > 0) {
             // 人物列表跟着这一趟的最终记忆对一次账（口径见 CastMemoryMirror.pruneStaleProfiles）
             withContext(Dispatchers.IO) {
