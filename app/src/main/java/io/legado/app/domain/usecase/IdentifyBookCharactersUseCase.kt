@@ -290,9 +290,8 @@ internal fun parseCharacterCandidates(
         )
     }.filter { it.name.isNotBlank() && it.confidence >= 0.65f }
         .distinctBy { it.name }
-    require(candidates.isNotEmpty()) {
-        "Character identification returned no valid characters; check the model JSON output"
-    }
+    // An empty array is a valid result for a short chapter or a book with no reliable
+    // character evidence; do not turn it into a task failure.
     return candidates
 }
 
