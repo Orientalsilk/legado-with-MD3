@@ -38,6 +38,7 @@ import io.legado.app.domain.gateway.DownloadCacheSettingsGateway
 import io.legado.app.domain.gateway.OtherSettingsGateway
 import io.legado.app.domain.gateway.ReadStyleGateway
 import io.legado.app.domain.gateway.ThemeSettingsGateway
+import io.legado.app.domain.model.AiReasoningLevel
 import io.legado.app.domain.model.readaloud.ReadAloudSessionStatus
 import io.legado.app.domain.model.readaloud.ReadAloudProgress
 import io.legado.app.domain.model.settings.ReadAloudTimerMode
@@ -668,7 +669,9 @@ class ReadBookViewModel(
                         startChapter = chapter.index,
                         chapterCount = 1,
                         reassign = false,
-                        reasoningLevel = ReadConfig.speechAnalysisReasoningLevel,
+                        reasoningLevel = AiReasoningLevel.entries.firstOrNull {
+                            it.storageValue == ReadConfig.speechAnalysisReasoningLevel
+                        } ?: AiReasoningLevel.OFF,
                         persistProgress = false,
                         onProgress = { _, _, _, _, error ->
                             if (error != null) chapterFailed = true
