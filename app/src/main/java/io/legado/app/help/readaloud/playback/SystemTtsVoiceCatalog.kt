@@ -7,7 +7,10 @@ import io.legado.app.constant.AppLog
 import io.legado.app.domain.model.readaloud.TtsEngineDescriptor
 import io.legado.app.domain.model.readaloud.TtsEngineKind
 import io.legado.app.domain.model.readaloud.TtsNativeVoice
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -66,10 +69,11 @@ class SystemTtsVoiceCatalog(context: Context) {
             AppLog.putDebug("系统 TTS 引擎初始化超时: $enginePackage")
             return null
         }
+        // 读音色是阻塞的 binder 调用，withContext 里的超时要等它自己返回才生效，等于没超时；
+        // 放进独立协程里 await，超时后调用方立刻继续（finally 里 shutdown 会让卡住的调用退出）。
+        val work = CoroutineScope(Dispatchers.IO + SupervisorJob()).async { block(tts) }
         return try {
-            val result = withTimeoutOrNull(VOICE_CATALOG_TIMEOUT_MS) {
-                withContext(Dispatchers.IO) { block(tts) }
-            }
+            val result = withTimeoutOrNull(VOICE_CATALOG_TIMEOUT_MS) { work.await() }
             if (result == null) AppLog.putDebug("系统 TTS 音色目录读取超时")
             result
         } catch (error: kotlinx.coroutines.CancellationException) {
@@ -78,6 +82,7 @@ class SystemTtsVoiceCatalog(context: Context) {
             AppLog.putDebug("系统 TTS 音色目录读取失败: ${error.localizedMessage}")
             null
         } finally {
+            work.cancel()
             withContext(Dispatchers.Main.immediate) {
                 runCatching { tts.stop() }
                 runCatching { tts.shutdown() }
