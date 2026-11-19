@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import io.legado.app.R
 import io.legado.app.data.entities.AiArtifact
 import io.legado.app.data.entities.BookCharacterProfile
+import io.legado.app.constant.AppLog
 import io.legado.app.domain.gateway.BookKnowledgeGateway
 import io.legado.app.help.readaloud.cast.CastProfileMirror
 import io.legado.app.domain.usecase.IdentifyBookCharactersUseCase
@@ -240,6 +241,7 @@ class BookCharacterListViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Throwable) {
+                AppLog.put("人物 AI 识别启动失败", e, true)
                 _uiState.update {
                     it.copy(
                         aiSheet = CharacterIdentifySheet(
