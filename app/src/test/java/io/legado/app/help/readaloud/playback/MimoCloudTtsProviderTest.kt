@@ -2,6 +2,8 @@ package io.legado.app.help.readaloud.playback
 
 import android.app.Application
 
+import android.app.Application
+
 import io.legado.app.domain.model.readaloud.CloudTtsEngine
 import io.legado.app.domain.model.readaloud.CloudTtsProviderType
 import io.legado.app.domain.model.readaloud.CloudTtsSynthesisRequest
@@ -11,6 +13,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
