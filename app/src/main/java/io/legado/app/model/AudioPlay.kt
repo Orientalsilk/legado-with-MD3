@@ -211,6 +211,25 @@ object AudioPlay : CoroutineScope by MainScope() {
             }
     }
 
+    /**
+     * 加载完成
+     */
+    private fun contentLoadFinish(
+        chapter: BookChapter,
+        content: String,
+        generation: Long,
+        bookUrl: String,
+        index: Int,
+    ) {
+        if (isCurrentPlayUrlRequest(generation, bookUrl, index) && chapter.index == index) {
+            durPlayUrl = content
+            durLyric = chapter.getVariable("lyric").takeIf { it.isNotBlank() }
+            upPlayUrl()
+            // 重新加载歌词，确保循环播放时歌词进度重置
+            callback?.upLyric(durLyric)
+        }
+    }
+
     private fun upPlayUrl() {
         if (isPlayToEnd()) {
             playNew()
