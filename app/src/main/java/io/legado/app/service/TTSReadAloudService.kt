@@ -7,7 +7,6 @@ import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
-import android.speech.tts.Voice
 import androidx.lifecycle.lifecycleScope
 import io.legado.app.R
 import io.legado.app.constant.AppConst
@@ -104,7 +103,6 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
      * 引擎音色多时要几百毫秒，回包超过 binder 上限的引擎（MultiTTS）还会直接回空。
      * 只在引擎实例变化后重取；空表不缓存，免得引擎尚未就绪就把整个会话锁死在默认音色。
      */
-    private var voiceCatalogCache: Set<Voice>? = null
 
     /** 上一次发给引擎的语速/音高：相同就不再发，省下切换边界上的两次 binder 调用 */
     private var appliedSpeechRate = -1f
@@ -139,7 +137,6 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
     @Synchronized
     private fun initTts(engineOverride: String? = null) {
         ttsInitFinish = false
-        voiceCatalogCache = null
         appliedSpeechRate = -1f
         appliedPitch = -1f
         val engine = engineOverride
@@ -200,13 +197,10 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
                 // 新初始化的引擎就停在它自己的默认音色上
                 activeVoiceName = ""
                 voiceIsDefault = true
-                voiceCatalogCache = null
                 appliedSpeechRate = -1f
                 appliedPitch = -1f
                 ttsInitFinish = true
                 upSpeechRate(reset = false)
-                // 先把音色表取回来：否则第一处「旁白→角色」的边界要现场等一次全量枚举
-                execute { voiceCatalog() }
                 if (playAfterTtsInit) play()
             }
         } else {
@@ -647,7 +641,8 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
      * 失败，上一个角色的音色一直挂着，之后的旁白也用角色的声音读。所以这些情况必须
      * 走 [restoreDefaultVoice] 退回引擎默认。
      *
-     * 音色表经 [voiceCatalog] 缓存：逐句各做一次全量枚举会在换音色处产生可感知的停顿。
+     * 已保存的 speakerId 就是引擎原始 Voice.name；直接按名称交给引擎，
+     * 不调用 tts.voices 全量枚举，避免 MultiTTS Binder 回包过大导致卡住或回空表。
      */
     private fun applyVoice(voiceName: String): Boolean {
         val tts = textToSpeech ?: return false
@@ -655,13 +650,7 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
             return restoreDefaultVoice(tts)
         }
         if (!voiceIsDefault && voiceName == activeVoiceName) return false
-        // MultiTTS 转发器的音色目录可能因 Binder 回包过大而为空；导入时保存的 speakerId
-        // 已是引擎原始音色名，目录缺失时直接按名字尝试 setVoice，不能静默降级成默认音色。
-        val voice = voiceCatalog().firstOrNull { it.name == voiceName }
-            ?: syntheticSystemTtsVoice(voiceName).also {
-                AppLog.putDebug("系统 TTS 音色目录未包含 $voiceName，尝试直接按音色名切换")
-            }
-        if (tts.setVoice(voice) == TextToSpeech.SUCCESS) {
+        if (tts.setVoice(syntheticSystemTtsVoice(voiceName)) == TextToSpeech.SUCCESS) {
             voiceIsDefault = false
             activeVoiceName = voiceName
             return true
@@ -681,16 +670,6 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
         }
         AppLog.putDebug("系统 TTS 恢复默认音色失败")
         return false
-    }
-
-    /** 引擎音色表：只在引擎实例变化后枚举一次。 */
-    private fun voiceCatalog(): Set<Voice> {
-        voiceCatalogCache?.let { return it }
-        val tts = textToSpeech ?: return emptySet()
-        val catalog = runCatching { tts.voices }.getOrNull().orEmpty()
-        if (catalog.isEmpty()) return emptySet()
-        voiceCatalogCache = catalog
-        return catalog
     }
 
     /** 这一句要的语速/音高：角色自带预设优先，其余落到全局语速与变声器。 */
