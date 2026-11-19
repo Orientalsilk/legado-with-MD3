@@ -68,6 +68,7 @@ internal class GuardedTtsAudioInputStream private constructor(
         if (length == 0) return 0
         checkLimit()
         val allowed = (maxBytes - bytesRead).coerceAtMost(length.toLong()).toInt()
+        if (allowed == 0) return -1
         val count = pushback.read(buffer, offset, allowed)
         if (count > 0) bytesRead += count
         return count
