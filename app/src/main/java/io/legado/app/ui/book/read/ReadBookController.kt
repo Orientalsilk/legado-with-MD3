@@ -1252,6 +1252,11 @@ class ReadBookController(
             delay(80)
             ReaderPerfTrace.marker("input.coalesced")
             publishReaderPageWindow()
+            // 只在当前章节正文输入已就绪时触发；邻章预取不会提前消耗 AI 请求。
+            ReadBook.readerChapterInputWindow.current
+                ?.chapter
+                ?.takeIf { it.index == ReadBook.durChapterIndex }
+                ?.let(viewModel::onReaderChapterReady)
         }
     }
 
