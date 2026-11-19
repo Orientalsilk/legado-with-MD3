@@ -196,7 +196,7 @@ object AudioPlay : CoroutineScope by MainScope() {
                 }
             }.onError { error ->
                 if (!isCurrentPlayUrlRequest(generation, bookUrl, index)) return@onError
-                AppLog.put("获取资源链接出错\\n$error", error, true)
+                AppLog.put("获取资源链接出错\n$error", error, true)
                 upLoading(false)
                 durLyric = null
                 callback?.upLyric(null)
