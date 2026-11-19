@@ -109,7 +109,7 @@ class HttpTtsAudioSynthesizer(private val repository: HttpTtsRepository) {
                 val expected = source.contentType
                 if (contentType == "application/json" || contentType.startsWith("text/") ||
                     (!expected.isNullOrBlank() && !contentType.matches(expected.toRegex()))) {
-                    throw NoStackTraceException("TTS服务器返回错误：${audioResponse.body.string()}")
+                    throw NoStackTraceException("TTS服务器返回错误：${readBoundedTtsErrorBody(audioResponse)}")
                 }
             }
             val input = audioResponse.body.byteStream()
@@ -152,6 +152,23 @@ class HttpTtsAudioSynthesizer(private val repository: HttpTtsRepository) {
             throw error
         }
     }
+}
+
+private const val HTTP_TTS_ERROR_BODY_PREVIEW_BYTES = 8 * 1024
+
+private fun readBoundedTtsErrorBody(response: Response): String {
+    val buffer = ByteArray(1024)
+    val output = java.io.ByteArrayOutputStream()
+    response.body.byteStream().use { input ->
+        while (output.size() < HTTP_TTS_ERROR_BODY_PREVIEW_BYTES) {
+            val limit = minOf(buffer.size, HTTP_TTS_ERROR_BODY_PREVIEW_BYTES - output.size())
+            val count = input.read(buffer, 0, limit)
+            if (count < 0) break
+            output.write(buffer, 0, count)
+        }
+    }
+    val charset = response.body.contentType()?.charset(Charsets.UTF_8) ?: Charsets.UTF_8
+    return output.toByteArray().toString(charset)
 }
 
 internal fun httpTtsAudioCacheSourceKey(source: HttpTTS, voice: ReadAloudVoice, emotion: String): String {
