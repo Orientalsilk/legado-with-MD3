@@ -426,9 +426,10 @@ object Backup {
     private fun copyBackup(context: Context, uri: Uri, fileName: String) {
         val treeDoc = DocumentFile.fromTreeUri(context, uri)
             ?: throw NoStackTraceException("无法打开备份目录")
-        // 先写到旁边的临时名，写完再换掉旧包。原先是先删旧文件再写，写到一半失败旧备份就没了。
-        val partialName = "$fileName.partial"
-        treeDoc.findFile(partialName)?.delete()
+        // 先写唯一暂存名；不能复用固定 .partial，否则上次失败留下的完整备份可能被本次覆盖。
+        val suffix = System.currentTimeMillis()
+        val partialName = "$fileName.partial-$suffix"
+        val previousName = "$fileName.previous-$suffix"
         val fileDoc = treeDoc.createFile("", partialName)
             ?: throw NoStackTraceException("创建文件失败")
         try {
@@ -443,12 +444,30 @@ object Backup {
             fileDoc.delete()
             throw error
         }
-        treeDoc.findFile(fileName)?.let { existing ->
-            if (existing.uri != fileDoc.uri) existing.delete()
+
+        // 不能先删旧备份再 rename 新文件：SAF provider 的 renameTo 可能失败。
+        // 先把旧文件改名暂存，只有新文件成功占据正式文件名后才删除旧文件。
+        val existing = treeDoc.findFile(fileName)
+        val previous = if (existing != null) {
+            if (!existing.renameTo(previousName)) {
+                fileDoc.delete()
+                throw NoStackTraceException("无法暂存旧备份，原文件未改动")
+            }
+            treeDoc.findFile(previousName) ?: existing
+        } else {
+            null
         }
+
         if (!fileDoc.renameTo(fileName)) {
-            throw NoStackTraceException("替换备份文件失败，完整文件仍在 $partialName")
+            val restored = previous?.renameTo(fileName) ?: true
+            val recovery = if (restored) {
+                "旧备份已恢复"
+            } else {
+                "旧备份仍保留在 $previousName"
+            }
+            throw NoStackTraceException("替换备份文件失败，$recovery；新备份仍在 $partialName")
         }
+        previous?.delete()
     }
 
     @Throws(Exception::class)
