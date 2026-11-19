@@ -1605,8 +1605,7 @@ class HttpReadAloudService : BaseReadAloudService(),
                 currentCoroutineContext().ensureActive()
                 if (e is CancellationException) throw e
                 if (!reportErrors) {
-                    val retryable = e is SocketTimeoutException || e is ConnectException
-                    if (retryable && shouldRetryHttpTtsStreamOpen(e, streamRetries)) {
+                    if (shouldRetryHttpTtsStreamOpen(e, streamRetries)) {
                         streamRetries++
                         continue
                     }
