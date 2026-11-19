@@ -3,6 +3,7 @@ package io.legado.app.feature.reader.platform
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
+import android.util.LruCache
 import android.text.TextPaint
 import androidx.core.net.toUri
 import io.legado.app.feature.reader.core.layout.GlyphClusters
@@ -16,8 +17,12 @@ import splitties.init.appCtx
 import java.io.File
 
 object ReaderAndroidPaintFactory {
-    /** 进程级字体缓存：同一 path/weight/italic/family 只做一次磁盘读取与解析。 */
-    private val typefaceCache = java.util.concurrent.ConcurrentHashMap<String, Typeface>()
+    /**
+     * 进程级有界字体缓存：同一 path/weight/italic/family 复用解析结果。
+     * 用户可导入任意数量字体、并切换字重/斜体组合；无界 Map 会把所有 Typeface 留到进程退出。
+     * 64 项足以覆盖常见阅读主题，同时让冷门字体自然淘汰。
+     */
+    private val typefaceCache = LruCache<String, Typeface>(64)
 
     fun create(style: ReaderTextStyle): Paint =
         Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
@@ -47,7 +52,7 @@ object ReaderAndroidPaintFactory {
 
     fun loadTypeface(path: String, weight: Int, italic: Boolean, family: String = "sans-serif"): Typeface {
         val key = "$path|$weight|$italic|$family"
-        typefaceCache[key]?.let { return it }
+        typefaceCache.get(key)?.let { return it }
         val base = runCatching {
             when {
                 path.startsWith("content://", ignoreCase = true) ->
@@ -74,7 +79,7 @@ object ReaderAndroidPaintFactory {
             }
             Typeface.create(base, typefaceStyle)
         }
-        typefaceCache[key] = typeface
+        typefaceCache.put(key, typeface)
         return typeface
     }
 }

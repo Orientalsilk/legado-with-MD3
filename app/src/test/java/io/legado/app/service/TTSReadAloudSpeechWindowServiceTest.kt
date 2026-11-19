@@ -109,6 +109,49 @@ class TTSReadAloudSpeechWindowServiceTest {
     }
 
     @Test
+    fun interruptedUtteranceWithoutRangeCallbacksRetriesCurrentCue() {
+        play("A", "B")
+
+        val first = assertNextSpoken("A")
+        assertNextSpoken("B")
+        engine.listener.onStop(first.id, true)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertNextSpoken("A")
+        assertEquals(0, service.nowSpeak)
+    }
+
+    @Test
+    fun interruptedUtteranceWithRangeCallbacksResumesFromLastConfirmedRange() {
+        val line = "ABCDEFGHIJKLMN"
+        play(line, "B")
+
+        val first = assertNextSpoken(line)
+        assertNextSpoken("B")
+        engine.listener.onRangeStart(first.id, 0, 2, 0)
+        shadowOf(Looper.getMainLooper()).idle()
+        engine.listener.onStop(first.id, true)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertNextSpoken(line.substring(2))
+        assertEquals(0, service.nowSpeak)
+    }
+
+    @Test
+    fun interruptedPrefetchedCueRebuildsWindowInsteadOfSkippingIt() {
+        play("A", "B")
+
+        assertNextSpoken("A")
+        val prefetched = assertNextSpoken("B")
+        engine.listener.onStop(prefetched.id, true)
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertNextSpoken("A")
+        assertNextSpoken("B")
+        assertEquals(0, service.nowSpeak)
+    }
+
+    @Test
     fun prefetchesOnlyCuesWithTheSameEngineState() {
         play("A", "B", "C", "D")
 

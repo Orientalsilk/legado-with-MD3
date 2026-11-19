@@ -865,6 +865,36 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
             finishCue(cue, s, "念完")
         }
 
+        override fun onStop(utteranceId: String, interrupted: Boolean) = postTtsCallback {
+            val cue = liveCueOf(utteranceId) ?: return@postTtsCallback
+            val spoken = pendingUtterances.remove(utteranceId)
+            val progress = speechProgress[utteranceId]
+            if (interrupted && cue != nowSpeak && hasSpeechPlaybackQueue) {
+                // 预取句在轮到它之前就被引擎中断：不能把它记成「已念完」，否则游标到这里会漏句。
+                // 当前句从最近一次范围回调的位置重起，并用新会话号隔离旧窗口的迟到回调。
+                AppLog.put("朗读预取句被引擎提前中断，正在重建当前朗读窗口")
+                if (!pause) play()
+                return@postTtsCallback
+            }
+            if (interrupted && cue == nowSpeak && progress != null) {
+                // 支持范围回调的引擎从最后确认的位置续念；不支持范围回调的引擎从本句起点重试，
+                // 宁可在极少数中断场景重复几个字，也不要静默漏掉整句后半段。
+                if (progress.sawRange &&
+                    resumeIfCutShort(cue, utteranceId, spoken, "引擎中断")
+                ) return@postTtsCallback
+                if (!progress.sawRange && respeakTries < MAX_RESPEAK_TRIES) {
+                    speechProgress.remove(utteranceId)
+                    respeakTries++
+                    paragraphStartPos = progress.startPos
+                    AppLog.put("朗读被引擎中断，正在从本句开头恢复（第 $respeakTries 次）")
+                    if (!pause) play()
+                    return@postTtsCallback
+                }
+            }
+            speechProgress.remove(utteranceId)
+            finishCue(cue, utteranceId, if (interrupted) "引擎中断" else "引擎停止")
+        }
+
         override fun onRangeStart(utteranceId: String?, start: Int, end: Int, frame: Int) = postTtsCallback {
             val cue = liveCueOf(utteranceId) ?: return@postTtsCallback
             if (cue != nowSpeak) return@postTtsCallback
