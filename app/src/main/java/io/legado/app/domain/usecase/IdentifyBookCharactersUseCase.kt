@@ -242,6 +242,8 @@ class IdentifyBookCharactersUseCase(
 
 
 /** Parse model output defensively: null/malformed list entries must not crash the task. */
+private const val MAX_ERROR_RESPONSE_PREVIEW = 1200
+
 internal fun parseCharacterCandidates(
     response: String,
 ): List<IdentifyBookCharactersUseCase.Candidate> {
@@ -256,7 +258,10 @@ internal fun parseCharacterCandidates(
     val characterArray = root.get("characters")
         ?.takeIf { it.isJsonArray }
         ?.asJsonArray
-        ?: error("Character identification JSON must contain a characters array")
+        ?: error(
+            "Character identification JSON must contain a characters array. Model response: " +
+                response.take(MAX_ERROR_RESPONSE_PREVIEW).replace(Regex("\\s+"), " ")
+        )
     val candidates = characterArray.mapNotNull { element ->
         if (!element.isJsonObject) return@mapNotNull null
         val item = element.asJsonObject
