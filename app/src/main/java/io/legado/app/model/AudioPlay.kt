@@ -29,6 +29,7 @@ import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.sync.Semaphore
 import org.koin.core.context.GlobalContext
 import splitties.init.appCtx
 
@@ -36,6 +37,7 @@ import splitties.init.appCtx
 @Suppress("unused")
 object AudioPlay : CoroutineScope by MainScope() {
 
+    private val readSavePermit = Semaphore(1)
     private val otherSettingsGateway get() = GlobalContext.get().get<OtherSettingsGateway>()
     private val readSettingsGateway get() = GlobalContext.get().get<ReadSettingsGateway>()
 
@@ -421,20 +423,23 @@ object AudioPlay : CoroutineScope by MainScope() {
 
     fun saveRead() {
         val book = book ?: return
-        Coroutine.async {
+        val chapterIndex = durChapterIndex
+        val chapterPosition = durChapterPos
+        val source = bookSource
+        Coroutine.async(semaphore = readSavePermit) {
             book.lastCheckCount = 0
             book.durChapterTime = System.currentTimeMillis()
-            val chapterChanged = book.durChapterIndex != durChapterIndex
-            book.durChapterIndex = durChapterIndex
-            book.durChapterPos = durChapterPos
+            val chapterChanged = book.durChapterIndex != chapterIndex
+            book.durChapterIndex = chapterIndex
+            book.durChapterPos = chapterPosition
             if (chapterChanged) {
-                appDb.bookChapterDao.getChapter(book.bookUrl, book.durChapterIndex)?.let {
+                appDb.bookChapterDao.getChapter(book.bookUrl, chapterIndex)?.let {
                     book.durChapterTitle = it.getDisplayTitle(
                         ContentProcessor.get(book.name, book.origin).getTitleReplaceRules(),
                         book.getUseReplaceRule(otherSettingsGateway.currentSettings.replaceEnableDefault),
                         chineseConverterType = readSettingsGateway.currentSettings.chineseConverterType,
                     )
-                    SourceCallBack.callBackBook(SourceCallBack.SAVE_READ, bookSource, book, it)
+                    SourceCallBack.callBackBook(SourceCallBack.SAVE_READ, source, book, it)
                 }
             }
             book.update()
