@@ -29,6 +29,26 @@ class FileUtilsAtomicWriteTest {
     }
 
     @Test
+    fun `空扩展名筛选返回目录全部文件而不递归`() {
+        folder.newFile("one.txt")
+        folder.newFile("two.json")
+
+        val files = FileUtils.listFiles(folder.root.absolutePath, allowExtension = null)
+
+        assertEquals(setOf("one.txt", "two.json"), files.orEmpty().map { it.name }.toSet())
+    }
+
+    @Test
+    fun `字符串扩展名筛选只返回匹配文件`() {
+        folder.newFile("one.txt")
+        folder.newFile("two.json")
+
+        val files = FileUtils.listFiles(folder.root.absolutePath, allowExtension = "txt")
+
+        assertEquals(listOf("one.txt"), files.orEmpty().map { it.name })
+    }
+
+    @Test
     fun `覆盖已有文件`() {
         val target = folder.newFile("readConfig.json")
         target.writeText("旧内容")
