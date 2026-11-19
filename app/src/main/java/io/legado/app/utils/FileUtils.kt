@@ -21,6 +21,7 @@ object FileUtils {
      *
      * 注意：不做 fsync，因此只保证**进程被杀**不丢，不保证掉电不丢。
      */
+    @Synchronized
     fun writeTextAtomic(filePath: String, text: String) {
         replaceAtomic(filePath) { it.writeText(text) }
     }
@@ -29,6 +30,7 @@ object FileUtils {
      * 原子复制覆盖：理由同 [writeTextAtomic]。恢复备份时用，避免删掉旧配置后
      * 复制失败或被中断，落得两头空。
      */
+    @Synchronized
     fun copyFileAtomic(source: File, targetPath: String) {
         replaceAtomic(targetPath) { source.copyTo(it, overwrite = true) }
     }
@@ -37,6 +39,7 @@ object FileUtils {
      * 原子写二进制。封面、备份这类「写坏就不能留半截」的文件用它，
      * 失败时目标文件仍是上一次的完整内容。
      */
+    @Synchronized
     fun writeAtomic(filePath: String, write: (OutputStream) -> Unit) {
         replaceAtomic(filePath) { file ->
             FileOutputStream(file).use { out -> write(out) }
@@ -341,10 +344,11 @@ object FileUtils {
      * 列出指定目录下的所有文件
      */
     fun listFiles(startDirPath: String, allowExtension: String?): Array<File>? {
-        return if (allowExtension == null)
-            listFiles(startDirPath, allowExtension = null)
-        else
+        return if (allowExtension == null) {
+            listFiles(startDirPath, allowExtensions = null)
+        } else {
             listFiles(startDirPath, arrayOf(allowExtension))
+        }
     }
 
     /**
