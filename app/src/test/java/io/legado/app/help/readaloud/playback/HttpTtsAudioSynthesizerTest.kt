@@ -153,7 +153,7 @@ class HttpTtsAudioSynthesizerTest {
     }
 
     @Test fun `stream timeout bounds stalled reads without retrying them`() {
-        assertEquals(60_000L, HTTP_TTS_STREAM_READ_TIMEOUT_MS)
+        assertEquals(300_000L, HTTP_TTS_STREAM_READ_TIMEOUT_MS)
         assertEquals(10 * 60_000L, HTTP_TTS_STREAM_CALL_TIMEOUT_MS)
         assertEquals(1, HTTP_TTS_STREAM_OPEN_RETRY_LIMIT)
         assertTrue(shouldRetryHttpTtsStreamOpen(java.net.ConnectException(), 0))
