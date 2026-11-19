@@ -365,45 +365,6 @@ private fun AboutContent(
                 ) {
                     Card(
                         modifier = Modifier
-                            .then(
-                                if (backdrop != null) {
-                                    Modifier
-                                        .textureBlur(
-                                            backdrop = backdrop,
-                                            shape = RoundedCornerShape(16.dp),
-                                            blurRadius = blurRadius,
-                                            noiseCoefficient = noiseCoefficient,
-                                            colors = BlurColors(
-                                                blendColors = cardBlend,
-                                                brightness = brightness,
-                                                contrast = contrast,
-                                                saturation = saturation,
-                                            ),
-                                        )
-                                } else {
-                                    Modifier
-                                },
-                            ),
-                        colors = CardDefaults.defaultColors(
-                            if (backdrop != null) Color.Transparent else MiuixTheme.colorScheme.surfaceContainer,
-                            Color.Transparent,
-                        ),
-                    ) {
-                        ArrowPreference(
-                            title = stringResource(R.string.check_update),
-                            onClick = { onIntent(AboutIntent.CheckUpdate) },
-                        )
-                        ArrowPreference(
-                            title = stringResource(R.string.contributors),
-                            endActions = {
-                                ValueText("GitHub")
-                            },
-                            onClick = { onIntent(AboutIntent.OpenUrl("https://github.com/HapeLee/legado-with-MD3")) },
-                        )
-                    }
-
-                    Card(
-                        modifier = Modifier
                             .padding(top = 12.dp)
                             .then(
                                 if (backdrop != null) {
