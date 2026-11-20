@@ -61,9 +61,32 @@ object CastSpeechOverlay {
         // 段级变声器按引号序号存在分配表里（正文胶囊那一栏设的，只管那一句）
         // 统一取一次章节分配数据：用于效果映射，也用于无角色范围时的诊断。
         // 日志区分设置开关、数据库分配行和正文实际标记，避免把「开关没开」误判为用户设置问题。
-        val assignmentRows = runCatching {
+        var assignmentRows = runCatching {
             appDb.chapterRoleAssignmentDao.getForChapter(bookUrl, chapterIndex)
         }.getOrDefault(emptyList())
+        if (multiRole && ReadConfig.multiRoleCast && assignmentRows.isEmpty()) {
+            // 本章还没分配过（AI 没跑或还没跑到）：开读前先用免费的离线分配补一次，
+            // 否则整章只有旁白一个声音。离线分配不联网、很快；已有分配（AI 或手动）的章节不会进到这里。
+            // 失败不影响朗读，按原样整章旁白。
+            runCatching {
+                val book = appDb.bookDao.getBook(bookUrl)
+                if (book != null) {
+                    GlobalContext.get().get<AiCastAssignUseCase>().execute(
+                        book = book,
+                        startChapter = chapterIndex,
+                        chapterCount = 1,
+                        reassign = false,
+                        presetId = OFFLINE_PRESET_ID,
+                        persistProgress = false,
+                        onProgress = { _, _, _, _, _ -> },
+                    )
+                    assignmentRows = appDb.chapterRoleAssignmentDao.getForChapter(bookUrl, chapterIndex)
+                }
+            }.onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                AppLog.put("离线分配失败：${it.localizedMessage}", it)
+            }
+        }
         val effectsOfQuote = if (paragraphs.isEmpty() || !multiRole) {
             emptyMap()
         } else {
