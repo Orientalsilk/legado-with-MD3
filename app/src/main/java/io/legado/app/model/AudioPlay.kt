@@ -518,7 +518,7 @@ object AudioPlay : CoroutineScope by MainScope() {
 
     fun playPositionChanged(position: Int) {
         durChapterPos = position
-        saveRead()
+        if (seekSaveJob?.isActive != true) saveRead()
     }
 
     /**
