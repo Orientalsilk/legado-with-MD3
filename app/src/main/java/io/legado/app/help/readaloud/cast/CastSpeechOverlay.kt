@@ -64,6 +64,14 @@ object CastSpeechOverlay {
         var assignmentRows = runCatching {
             appDb.chapterRoleAssignmentDao.getForChapter(bookUrl, chapterIndex)
         }.getOrDefault(emptyList())
+        if (multiRole && ReadConfig.multiRoleCast) {
+            // 后台朗读时阅读页不在前台，不会触发自动分析：开读本章时顺带排队分析本章与下一章（AI，账本去重）
+            runCatching {
+                appDb.bookDao.getBook(bookUrl)?.let { book ->
+                    AutoCastRunner.requestFrom(book, chapterIndex) { appDb.bookChapterDao.getChapter(bookUrl, it) }
+                }
+            }
+        }
         if (multiRole && ReadConfig.multiRoleCast && assignmentRows.isEmpty()) {
             // 本章还没分配过（AI 没跑或还没跑到）：开读前先用免费的离线分配补一次，
             // 否则整章只有旁白一个声音。离线分配不联网、很快；已有分配（AI 或手动）的章节不会进到这里。

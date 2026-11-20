@@ -39,7 +39,6 @@ import io.legado.app.domain.gateway.DownloadCacheSettingsGateway
 import io.legado.app.domain.gateway.OtherSettingsGateway
 import io.legado.app.domain.gateway.ReadStyleGateway
 import io.legado.app.domain.gateway.ThemeSettingsGateway
-import io.legado.app.domain.model.AiReasoningLevel
 import io.legado.app.domain.model.readaloud.ReadAloudSessionStatus
 import io.legado.app.domain.model.readaloud.ReadAloudProgress
 import io.legado.app.domain.model.settings.ReadAloudTimerMode
@@ -67,8 +66,6 @@ import io.legado.app.help.book.isMobi
 import io.legado.app.help.book.removeType
 import io.legado.app.help.config.ReadBookConfig
 import io.legado.app.ui.config.readConfig.ReadConfig
-import io.legado.app.help.readaloud.cast.AiCastPresetStore
-import io.legado.app.help.readaloud.cast.VoicePoolStore
 import io.legado.app.help.coroutine.Coroutine
 import io.legado.app.help.source.getSourceType
 import io.legado.app.model.ImageProvider
@@ -90,7 +87,6 @@ import io.legado.app.ui.book.searchContent.SearchResult
 import io.legado.app.utils.GSON
 import io.legado.app.utils.ImageSaveUtils
 import io.legado.app.utils.NetworkUtils
-import io.legado.app.utils.MD5Utils
 import io.legado.app.utils.isAbsUrl
 import io.legado.app.utils.isTrue
 import io.legado.app.utils.openUrl
@@ -652,72 +648,13 @@ class ReadBookViewModel(
 
         autoCastChapterWorker = viewModelScope.launch(IO) {
             for ((requestedBook, requestedChapter) in autoCastChapterRequests) {
-                analyzeReaderChapter(requestedBook, requestedChapter)
+                io.legado.app.help.readaloud.cast.AutoCastRunner.analyze(requestedBook, requestedChapter)
                 // 提前分好下一章：当前章 AI 返回时往往已经开始朗读，只有下一章才赶得上；
                 // 下一章还没下载就读不到正文，这里静默跳过，等它成为当前章再分析
                 val next = ReadBook.readerChapterInputWindow.next?.chapter
                     ?.takeIf { it.bookUrl == requestedBook.bookUrl && it.index == requestedChapter.index + 1 }
-                if (next != null) analyzeReaderChapter(requestedBook, next, quiet = true)
+                if (next != null) io.legado.app.help.readaloud.cast.AutoCastRunner.analyze(requestedBook, next, quiet = true)
             }
-        }
-    }
-
-    private suspend fun analyzeReaderChapter(book: Book, chapter: BookChapter, quiet: Boolean = false) {
-        val fingerprint = MD5Utils.md5Encode(
-            "${chapter.url}|${chapter.title}|${chapter.tag.orEmpty()}",
-        )
-        try {
-            if (AiCastPresetStore.isAutoChapterAnalyzed(
-                    book.bookUrl, chapter.index, fingerprint,
-                )
-            ) return
-
-            // 只有池名还不够：默认池可能没有任何启用音色。没有真实可用音色时，
-            // 不应为了最终无法落地的分配而调用 AI、消耗用户额度。
-            if (VoicePoolStore.voicePoolMap().isEmpty()) {
-                AppLog.put("自动人物分析跳过：没有可用的声音池音色（${chapter.title}）")
-                return
-            }
-
-            var chapterFailed = false
-            val result = aiCastAssignUseCase.execute(
-                book = book,
-                startChapter = chapter.index,
-                chapterCount = 1,
-                reassign = false,
-                reasoningLevel = AiReasoningLevel.entries.firstOrNull {
-                    it.storageValue == ReadConfig.speechAnalysisReasoningLevel
-                } ?: AiReasoningLevel.OFF,
-                persistProgress = false,
-                onProgress = { _, _, _, _, error ->
-                    if (error != null) chapterFailed = true
-                },
-            )
-            if (result.isSuccess && !chapterFailed) {
-                AiCastPresetStore.markAutoChapterAnalyzed(
-                    book.bookUrl, chapter.index, fingerprint,
-                )
-                AppLog.putDebug("自动人物与音色分析完成：${chapter.title}")
-            } else if (!quiet) {
-                AppLog.put(
-                    "自动人物与音色分析失败：${chapter.title}（" +
-                        "${result.exceptionOrNull()?.localizedMessage ?: "章节处理未完成"}），改用离线分配",
-                )
-                // AI 没配好/断网/限额时不让这章整章念旁白：退到免费的离线分配（不记账，下次 AI 可再来）
-                aiCastAssignUseCase.execute(
-                    book = book,
-                    startChapter = chapter.index,
-                    chapterCount = 1,
-                    reassign = false,
-                    presetId = io.legado.app.help.readaloud.cast.OFFLINE_PRESET_ID,
-                    persistProgress = false,
-                    onProgress = { _, _, _, _, _ -> },
-                )
-            }
-        } catch (e: kotlinx.coroutines.CancellationException) {
-            throw e
-        } catch (e: Throwable) {
-            AppLog.put("自动人物与音色分析异常：${chapter.title}", e, true)
         }
     }
 

@@ -230,10 +230,14 @@ class AiCastAssignUseCase(
         var previousSpeakers = emptyList<AiCastPayload.Speaker>()
         for (window in windows) {
             if (offline) {
+                // 已有分配（手动或 AI）的句子不动，只补空缺
+                val already = if (reassign) emptySet() else
+                    appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex)
+                        .map { it.quoteOrdinal }.toSet()
                 // 离线分配：不联网、不用 AI，只按引号前后的「某某说」与称呼里的性别/年龄词判断；认不出的留空走旁白
                 val guesses = LocalCastGuesser.guess(
                     excerpt = window.excerpt,
-                    pending = window.pending,
+                    pending = window.pending.filter { it !in already },
                     known = known.filterNot { isPlaceholderName(it.name) }.map { row ->
                         val profile = profiles.firstOrNull { it.id == row.id }
                             ?: profiles.firstOrNull { it.name == row.name }
