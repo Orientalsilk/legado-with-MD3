@@ -356,8 +356,11 @@ class AudioPlayService : BaseService(),
      * 调节进度
      */
     private fun adjustProgress(position: Int) {
-        this.position = position
-        exoPlayer.seekTo(position.toLong())
+        val maxPosition = exoPlayer.duration.takeIf { it >= 0 } ?: Int.MAX_VALUE.toLong()
+        this.position = position.coerceIn(0, minOf(maxPosition, Int.MAX_VALUE.toLong())).toInt()
+        AudioPlay.seekPositionChanged(this.position)
+        exoPlayer.seekTo(this.position.toLong())
+        postEvent(EventBus.AUDIO_PROGRESS, this.position)
     }
 
     /**
