@@ -457,7 +457,7 @@ class AudioPlayService : BaseService(),
                 // 结束
                 upPlayProgressJob?.cancel()
                 AudioPlay.playPositionChanged(exoPlayer.duration.toInt())
-                AudioPlay.next()
+                if (exoPlayer.playWhenReady) AudioPlay.next()
             }
         }
         upAudioPlayNotification()
@@ -542,6 +542,7 @@ class AudioPlayService : BaseService(),
         val skipEnds = AudioPlay.book?.getCloseCredits() ?: 0
         upPlayProgressJob = lifecycleScope.launch {
             while (isActive) {
+                if (!isCurrentPlaybackChapter()) break
                 val durP = exoPlayer.currentPosition
                 //更新buffer位置
                 AudioPlay.playPositionChanged(durP.toInt())
