@@ -1334,7 +1334,7 @@ class HttpReadAloudService : BaseReadAloudService(),
             when (it) {
                 is CancellationException -> throw it
                 else -> {
-                    AppLog.put("TTS预合成cue失败: ${it.localizedMessage}")
+                    AppLog.put("TTS预合成cue失败: ${it.javaClass.simpleName} ${it.localizedMessage.orEmpty()}", it)
                     false
                 }
             }
