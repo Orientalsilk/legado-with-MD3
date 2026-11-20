@@ -49,12 +49,23 @@ class HttpTtsAudioSynthesizer(private val repository: HttpTtsRepository) {
             }
         }
 
+    /** 调用方可能在主线程：头部校验会读 socket，必须固定在 IO 线程完成。 */
     suspend fun openStream(
         source: HttpTTS,
         text: String,
         voice: ReadAloudVoice? = null,
         emotion: String = "",
         ownerJob: Job? = null,
+    ): InputStream = withContext(Dispatchers.IO) {
+        openStreamOnIo(source, text, voice, emotion, ownerJob)
+    }
+
+    private suspend fun openStreamOnIo(
+        source: HttpTTS,
+        text: String,
+        voice: ReadAloudVoice?,
+        emotion: String,
+        ownerJob: Job?,
     ): InputStream {
         require(voice == null ||
             (voice.engineType == ReadAloudVoice.ENGINE_HTTP && voice.engineId == source.id.toString())) {
