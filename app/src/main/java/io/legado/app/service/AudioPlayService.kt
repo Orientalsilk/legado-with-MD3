@@ -342,6 +342,7 @@ class AudioPlayService : BaseService(),
         try {
             pause = true
             if (abandonFocus) {
+                needResumeOnAudioFocusGain = false
                 abandonFocus()
             }
             upPlayProgressJob?.cancel()
@@ -362,6 +363,7 @@ class AudioPlayService : BaseService(),
     @SuppressLint("WakelockTimeout")
     private fun resume(requestAudioFocus: Boolean = true) {
         try {
+            if (!requestAudioFocus) needResumeOnAudioFocusGain = false
             val playerNeedsPreparation = exoPlayer.playbackState == Player.STATE_IDLE ||
                 exoPlayer.playbackState == Player.STATE_ENDED
             if (!preparingMedia && playerNeedsPreparation) {
