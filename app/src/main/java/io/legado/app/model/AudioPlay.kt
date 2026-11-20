@@ -28,6 +28,9 @@ import io.legado.app.utils.startService
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.sync.Semaphore
 import org.koin.core.context.GlobalContext
@@ -36,6 +39,9 @@ import splitties.init.appCtx
 @SuppressLint("StaticFieldLeak")
 @Suppress("unused")
 object AudioPlay : CoroutineScope by MainScope() {
+
+    private const val SEEK_SAVE_DELAY_MS = 300L
+    private var seekSaveJob: Job? = null
 
     private val readSavePermit = Semaphore(1)
     private val otherSettingsGateway get() = GlobalContext.get().get<OtherSettingsGateway>()
@@ -372,8 +378,7 @@ object AudioPlay : CoroutineScope by MainScope() {
     }
 
     fun adjustProgress(position: Int) {
-        durChapterPos = position
-        saveRead()
+        seekPositionChanged(position)
         if (AudioPlayService.isRun) {
             context.startService<AudioPlayService> {
                 action = IntentAction.adjustProgress
@@ -514,6 +519,22 @@ object AudioPlay : CoroutineScope by MainScope() {
     fun playPositionChanged(position: Int) {
         durChapterPos = position
         saveRead()
+    }
+
+    /**
+     * 拖动进度条时只保存最后一次定位，避免每个 seek 事件都触发数据库写入。
+     */
+    internal fun seekPositionChanged(position: Int) {
+        durChapterPos = position.coerceAtLeast(0)
+        seekSaveJob?.cancel()
+        val bookUrl = book?.bookUrl ?: return
+        val chapterIndex = durChapterIndex
+        seekSaveJob = launch {
+            delay(SEEK_SAVE_DELAY_MS)
+            if (book?.bookUrl == bookUrl && durChapterIndex == chapterIndex) {
+                saveRead()
+            }
+        }
     }
 
     fun upLoading(loading: Boolean) {
