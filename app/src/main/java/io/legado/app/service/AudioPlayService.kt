@@ -32,6 +32,7 @@ import io.legado.app.constant.EventBus
 import io.legado.app.constant.IntentAction
 import io.legado.app.constant.NotificationId
 import io.legado.app.constant.Status
+import io.legado.app.data.entities.BookChapter
 import io.legado.app.domain.gateway.OtherSettingsGateway
 import io.legado.app.domain.gateway.ReadAloudSettingsGateway
 import io.legado.app.domain.gateway.PlaybackCapsuleGateway
@@ -145,8 +146,9 @@ class AudioPlayService : BaseService(),
     private var mediaSessionCompat: MediaSessionCompat? = null
     private var broadcastReceiver: BroadcastReceiver? = null
     private var needResumeOnAudioFocusGain = false
-    private var playbackChapter = AudioPlay.durChapter
+    private var playbackChapter: BookChapter? = null
     private var playbackGeneration = 0L
+    private var reportedDuration = -1L
     private var position = AudioPlay.book?.durChapterPos ?: 0
     private var dsJob: Job? = null
     private var upNotificationJob: Coroutine<*>? = null
@@ -272,7 +274,11 @@ class AudioPlayService : BaseService(),
     private fun play() {
         val generation = ++playbackGeneration
         val chapter = AudioPlay.durChapter
+        val playbackUrl = url
+        val playbackBook = AudioPlay.book
+        val playbackSource = AudioPlay.bookSource
         playbackChapter = chapter
+        reportedDuration = -1L
         upAudioPlayNotification()
         if (!requestFocus()) {
             // A chapter switch can reach play() while the previous playback locks
@@ -297,9 +303,9 @@ class AudioPlayService : BaseService(),
             postEvent(EventBus.AUDIO_STATE, Status.STOP)
             upPlayProgressJob?.cancel()
             val analyzeUrl = AnalyzeUrl(
-                url,
-                source = AudioPlay.bookSource,
-                ruleData = AudioPlay.book,
+                playbackUrl,
+                source = playbackSource,
+                ruleData = playbackBook,
                 chapter = chapter,
                 coroutineContext = coroutineContext
             )
@@ -308,14 +314,14 @@ class AudioPlayService : BaseService(),
             exoPlayer.setMediaItem(mediaItem)
             exoPlayer.playWhenReady = true
             // 片头跳过设定（仅从头播放时生效）
-            val skipStartMs = (AudioPlay.book?.getOpenCredits() ?: 0) * 1000L
+            val skipStartMs = (playbackBook?.getOpenCredits() ?: 0) * 1000L
             val playtime = if (position == 0) skipStartMs else position.toLong()
             exoPlayer.seekTo(playtime)
             exoPlayer.prepare()
         }.onError {
             if (generation == playbackGeneration) {
                 AppLog.put("播放出错\n${it.localizedMessage}", it)
-                toastOnUi("$url ${it.localizedMessage}")
+                toastOnUi("$playbackUrl ${it.localizedMessage}")
                 stopSelf()
             }
         }
@@ -424,10 +430,14 @@ class AudioPlayService : BaseService(),
                     AudioPlay.status = Status.PAUSE
                     postEvent(EventBus.AUDIO_STATE, Status.PAUSE)
                 }
-                postEvent(EventBus.AUDIO_SIZE, exoPlayer.duration.toInt())
+                val duration = exoPlayer.duration
+                postEvent(EventBus.AUDIO_SIZE, duration.toInt())
                 upMediaMetadata()
                 upPlayProgress()
-                AudioPlay.saveDurChapter(exoPlayer.duration)
+                if (duration >= 0 && duration != reportedDuration) {
+                    reportedDuration = duration
+                    AudioPlay.saveDurChapter(duration)
+                }
             }
 
             Player.STATE_ENDED -> {
