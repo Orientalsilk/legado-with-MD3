@@ -2012,26 +2012,28 @@ class HttpReadAloudService : BaseReadAloudService(),
         }
     }
 
-    private suspend fun createSpeakFile(name: String, inputStream: InputStream): Boolean {
-        inputStream.use { input ->
-            val part = createSpeakPartFile(name)
-            try {
-                part.outputStream().use { out ->
-                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                    while (true) {
-                        currentCoroutineContext().ensureActive()
-                        val count = input.read(buffer)
-                        if (count < 0) break
-                        out.write(buffer, 0, count)
+    // 预下载协程跑在 lifecycleScope（主线程）上，读网络流和写文件必须固定在 IO 线程
+    private suspend fun createSpeakFile(name: String, inputStream: InputStream): Boolean =
+        withContext(IO) {
+            inputStream.use { input ->
+                val part = createSpeakPartFile(name)
+                try {
+                    part.outputStream().use { out ->
+                        val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                        while (true) {
+                            ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            out.write(buffer, 0, count)
+                        }
                     }
+                    ensureActive()
+                    commitSpeakPart(name, part)
+                } finally {
+                    part.delete()
                 }
-                currentCoroutineContext().ensureActive()
-                return commitSpeakPart(name, part)
-            } finally {
-                part.delete()
             }
         }
-    }
 
     /** 「音频缓存保留时间」= 0：用户要即听即焚，缓存目录里不该长期留下任何一份音频。 */
     private val cacheBurnAfterRead: Boolean
