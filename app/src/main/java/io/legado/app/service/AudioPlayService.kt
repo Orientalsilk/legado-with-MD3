@@ -263,7 +263,19 @@ class AudioPlayService : BaseService(),
     private fun play() {
         upAudioPlayNotification()
         if (!requestFocus()) {
+            // A chapter switch can reach play() while the previous playback locks
+            // are still held. Failed focus acquisition must leave no stale locks
+            // or PLAY state behind.
+            pause = true
+            needResumeOnAudioFocusGain = false
+            upPlayProgressJob?.cancel()
+            releasePlaybackLocks()
+            abandonFocus()
+            AudioPlay.status = Status.PAUSE
+            postEvent(EventBus.AUDIO_STATE, Status.PAUSE)
+            upMediaSessionPlaybackState(PlaybackStateCompat.STATE_PAUSED)
             AudioPlay.upLoading(false)
+            upAudioPlayNotification()
             return
         }
         acquirePlaybackLocks()
