@@ -208,6 +208,9 @@ class AudioPlayService : BaseService(),
                 IntentAction.stopPlay -> {
                     playbackGeneration++
                     playbackChapter = null
+                    pause = true
+                    needResumeOnAudioFocusGain = false
+                    releasePlaybackLocks()
                     exoPlayer.stop()
                     upPlayProgressJob?.cancel()
                     AudioPlay.status = Status.STOP
@@ -238,6 +241,8 @@ class AudioPlayService : BaseService(),
     }
 
     override fun onDestroy() {
+        playbackGeneration++
+        playbackChapter = null
         GlobalContext.get().get<PlaybackCapsuleGateway>()
             .setSessionAvailable(PlaybackCapsuleSource.AudioBook, false)
         capsuleOverlayWindow?.close()
