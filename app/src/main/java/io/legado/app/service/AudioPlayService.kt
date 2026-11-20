@@ -145,6 +145,8 @@ class AudioPlayService : BaseService(),
     private var mediaSessionCompat: MediaSessionCompat? = null
     private var broadcastReceiver: BroadcastReceiver? = null
     private var needResumeOnAudioFocusGain = false
+    private var playbackChapter = AudioPlay.durChapter
+    private var playbackGeneration = 0L
     private var position = AudioPlay.book?.durChapterPos ?: 0
     private var dsJob: Job? = null
     private var upNotificationJob: Coroutine<*>? = null
@@ -204,6 +206,8 @@ class AudioPlayService : BaseService(),
                 }
 
                 IntentAction.stopPlay -> {
+                    playbackGeneration++
+                    playbackChapter = null
                     exoPlayer.stop()
                     upPlayProgressJob?.cancel()
                     AudioPlay.status = Status.STOP
@@ -261,6 +265,9 @@ class AudioPlayService : BaseService(),
      */
     @SuppressLint("WakelockTimeout")
     private fun play() {
+        val generation = ++playbackGeneration
+        val chapter = AudioPlay.durChapter
+        playbackChapter = chapter
         upAudioPlayNotification()
         if (!requestFocus()) {
             // A chapter switch can reach play() while the previous playback locks
@@ -280,6 +287,7 @@ class AudioPlayService : BaseService(),
         }
         acquirePlaybackLocks()
         execute(context = Main) {
+            if (generation != playbackGeneration || chapter !== playbackChapter) return@execute
             AudioPlay.status = Status.STOP
             postEvent(EventBus.AUDIO_STATE, Status.STOP)
             upPlayProgressJob?.cancel()
@@ -287,10 +295,12 @@ class AudioPlayService : BaseService(),
                 url,
                 source = AudioPlay.bookSource,
                 ruleData = AudioPlay.book,
-                chapter = AudioPlay.durChapter,
+                chapter = chapter,
                 coroutineContext = coroutineContext
             )
-            exoPlayer.setMediaItem(analyzeUrl.getMediaItem())
+            val mediaItem = analyzeUrl.getMediaItem()
+            if (generation != playbackGeneration || chapter !== playbackChapter) return@execute
+            exoPlayer.setMediaItem(mediaItem)
             exoPlayer.playWhenReady = true
             // 片头跳过设定（仅从头播放时生效）
             val skipStartMs = (AudioPlay.book?.getOpenCredits() ?: 0) * 1000L
@@ -298,9 +308,11 @@ class AudioPlayService : BaseService(),
             exoPlayer.seekTo(playtime)
             exoPlayer.prepare()
         }.onError {
-            AppLog.put("播放出错\n${it.localizedMessage}", it)
-            toastOnUi("$url ${it.localizedMessage}")
-            stopSelf()
+            if (generation == playbackGeneration) {
+                AppLog.put("播放出错\n${it.localizedMessage}", it)
+                toastOnUi("$url ${it.localizedMessage}")
+                stopSelf()
+            }
         }
     }
 
@@ -359,6 +371,7 @@ class AudioPlayService : BaseService(),
      * 调节进度
      */
     private fun adjustProgress(position: Int) {
+        if (!isCurrentPlaybackChapter()) return
         val maxPosition = exoPlayer.duration.takeIf { it >= 0 } ?: Int.MAX_VALUE.toLong()
         this.position = position.coerceIn(0, minOf(maxPosition, Int.MAX_VALUE.toLong())).toInt()
         AudioPlay.seekPositionChanged(this.position)
@@ -385,6 +398,7 @@ class AudioPlayService : BaseService(),
      */
     override fun onPlaybackStateChanged(playbackState: Int) {
         super.onPlaybackStateChanged(playbackState)
+        if (!isCurrentPlaybackChapter()) return
         when (playbackState) {
             Player.STATE_IDLE -> {
                 // 空闲
@@ -421,6 +435,10 @@ class AudioPlayService : BaseService(),
         upAudioPlayNotification()
     }
 
+    private fun isCurrentPlaybackChapter(): Boolean = playbackChapter?.let {
+        it.bookUrl == AudioPlay.book?.bookUrl && it.index == AudioPlay.durChapterIndex
+    } == true
+
     private fun upMediaMetadata() {
         val metadata = MediaMetadataCompat.Builder()
             .putBitmap(MediaMetadataCompat.METADATA_KEY_ART, cover)
@@ -437,6 +455,7 @@ class AudioPlayService : BaseService(),
      */
     override fun onPlayerError(error: PlaybackException) {
         super.onPlayerError(error)
+        if (!isCurrentPlaybackChapter()) return
         pause = true
         needResumeOnAudioFocusGain = false
         releasePlaybackLocks()
