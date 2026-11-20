@@ -148,6 +148,7 @@ class AudioPlayService : BaseService(),
     private var needResumeOnAudioFocusGain = false
     private var playbackChapter: BookChapter? = null
     private var playbackGeneration = 0L
+    private var preparingMedia = false
     private var reportedDuration = -1L
     private var position = AudioPlay.book?.durChapterPos ?: 0
     private var dsJob: Job? = null
@@ -210,6 +211,7 @@ class AudioPlayService : BaseService(),
                 IntentAction.stopPlay -> {
                     playbackGeneration++
                     playbackChapter = null
+                    preparingMedia = false
                     pause = true
                     needResumeOnAudioFocusGain = false
                     releasePlaybackLocks()
@@ -245,6 +247,7 @@ class AudioPlayService : BaseService(),
     override fun onDestroy() {
         playbackGeneration++
         playbackChapter = null
+        preparingMedia = false
         GlobalContext.get().get<PlaybackCapsuleGateway>()
             .setSessionAvailable(PlaybackCapsuleSource.AudioBook, false)
         capsuleOverlayWindow?.close()
@@ -274,6 +277,7 @@ class AudioPlayService : BaseService(),
     private fun play() {
         val generation = ++playbackGeneration
         val chapter = AudioPlay.durChapter
+        preparingMedia = false
         val playbackUrl = url
         val playbackBook = AudioPlay.book
         val playbackSource = AudioPlay.bookSource
@@ -296,6 +300,7 @@ class AudioPlayService : BaseService(),
             upAudioPlayNotification()
             return
         }
+        preparingMedia = true
         acquirePlaybackLocks()
         execute(context = Main) {
             if (generation != playbackGeneration || chapter !== playbackChapter) return@execute
@@ -312,7 +317,8 @@ class AudioPlayService : BaseService(),
             val mediaItem = analyzeUrl.getMediaItem()
             if (generation != playbackGeneration || chapter !== playbackChapter) return@execute
             exoPlayer.setMediaItem(mediaItem)
-            exoPlayer.playWhenReady = true
+            exoPlayer.playWhenReady = !pause
+            preparingMedia = false
             // 片头跳过设定（仅从头播放时生效）
             val skipStartMs = (playbackBook?.getOpenCredits() ?: 0) * 1000L
             val playtime = if (position == 0) skipStartMs else position.toLong()
@@ -320,6 +326,7 @@ class AudioPlayService : BaseService(),
             exoPlayer.prepare()
         }.onError {
             if (generation == playbackGeneration) {
+                preparingMedia = false
                 AppLog.put("播放出错\n${it.localizedMessage}", it)
                 toastOnUi("$playbackUrl ${it.localizedMessage}")
                 stopSelf()
@@ -355,6 +362,12 @@ class AudioPlayService : BaseService(),
     @SuppressLint("WakelockTimeout")
     private fun resume(requestAudioFocus: Boolean = true) {
         try {
+            val playerNeedsPreparation = exoPlayer.playbackState == Player.STATE_IDLE ||
+                exoPlayer.playbackState == Player.STATE_ENDED
+            if (!preparingMedia && playerNeedsPreparation) {
+                AudioPlay.loadOrUpPlayUrl()
+                return
+            }
             // URL 尚未准备好时交给章节加载流程；不要提前持有唤醒锁。
             if (url.isEmpty()) {
                 AudioPlay.loadOrUpPlayUrl()
@@ -471,6 +484,7 @@ class AudioPlayService : BaseService(),
     override fun onPlayerError(error: PlaybackException) {
         super.onPlayerError(error)
         if (!isCurrentPlaybackChapter()) return
+        preparingMedia = false
         pause = true
         needResumeOnAudioFocusGain = false
         releasePlaybackLocks()
