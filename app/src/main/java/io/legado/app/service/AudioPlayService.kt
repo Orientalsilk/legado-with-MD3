@@ -330,17 +330,18 @@ class AudioPlayService : BaseService(),
      * 恢复播放
      */
     @SuppressLint("WakelockTimeout")
-    private fun resume() {
-        acquirePlaybackLocks()
+    private fun resume(requestAudioFocus: Boolean = true) {
         try {
-            pause = false
+            // URL 尚未准备好时交给章节加载流程；不要提前持有唤醒锁。
             if (url.isEmpty()) {
                 AudioPlay.loadOrUpPlayUrl()
                 return
             }
-            if (!exoPlayer.isPlaying) {
-                exoPlayer.play()
-            }
+            if (!pause || (requestAudioFocus && !requestFocus())) return
+            needResumeOnAudioFocusGain = false
+            pause = false
+            acquirePlaybackLocks()
+            exoPlayer.play()
             upPlayProgress()
             upMediaSessionPlaybackState(PlaybackStateCompat.STATE_PLAYING)
             AudioPlay.status = Status.PLAY
@@ -348,6 +349,8 @@ class AudioPlayService : BaseService(),
             upAudioPlayNotification()
         } catch (e: Exception) {
             e.printOnDebug()
+            pause = true
+            releasePlaybackLocks()
             stopSelf()
         }
     }
@@ -637,7 +640,7 @@ class AudioPlayService : BaseService(),
             AudioManager.AUDIOFOCUS_GAIN -> {
                 if (needResumeOnAudioFocusGain) {
                     AppLog.put("音频焦点获得,继续播放")
-                    resume()
+                    resume(requestAudioFocus = false)
                 } else {
                     AppLog.put("音频焦点获得")
                 }
