@@ -153,7 +153,8 @@ fun TinySettingItem(
                 if (!enabled) disabled()
             },
         cornerRadius = CompactCardCornerRadius,
-        containerColor = color?.copy(alpha = alpha),
+        // 透明色 copy(alpha=1) 会变成不透明黑色，透明就保持透明
+        containerColor = color?.let { if (it == Color.Transparent) it else it.copy(alpha = alpha) },
         contentColor = LegadoTheme.colorScheme.onSurface.copy(alpha = alpha),
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
