@@ -230,8 +230,8 @@ fun AiCastDialogSheet(
     LaunchedEffect(presets) {
         val cur = selectedPresetId
         if (cur == null || (cur != OFFLINE_PRESET_ID && presets.none { it.id == cur })) {
-            // 默认走免费的离线分配；AI 预设需要时手动点选
-            selectedPresetId = OFFLINE_PRESET_ID
+            // 默认使用第一条 AI 分配要求；离线仅作为显式强制选项或 AI 自动失败后的兜底。
+            selectedPresetId = presets.firstOrNull()?.id ?: ""
         }
     }
     var temporary by remember { mutableStateOf("") }
