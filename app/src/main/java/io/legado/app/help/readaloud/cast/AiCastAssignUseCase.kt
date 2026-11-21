@@ -196,7 +196,17 @@ class AiCastAssignUseCase(
             anchors += hits
         }
         val windows = buildWindows(paragraphs, anchors)
-        if (windows.isEmpty()) return@withContext
+        if (windows.isEmpty()) {
+            val paragraphCount = paragraphs.count { it.isNotBlank() }
+            val quoteLikeCount = paragraphs.sumOf { paragraph ->
+                paragraph.count { ch -> CastMarkers.QuotePairs.any { (open, _) -> ch == open } }
+            }
+            error(
+                "本章没有生成任何可分配的对话锚点（有效锚点=0，正文段落=${paragraphCount}，" +
+                    "引号开符号=${quoteLikeCount}）。AI 分配已停止，未将本章误报为完成；" +
+                    "请检查正文解析结果及引号格式。",
+            )
+        }
         val preset = if (offline) null else (
             aiProfileGateway.getTaskPreset(AiTaskType.IDENTIFY_CHARACTERS)
                 ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
