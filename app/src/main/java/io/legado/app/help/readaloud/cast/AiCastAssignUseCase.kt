@@ -291,39 +291,62 @@ class AiCastAssignUseCase(
                 previousSpeakers = previousSpeakers,
                 bookMemory = bookMemory,
             )
-            val parsed = parseResponse(
-                streamChunk(
-                    model = preset.model,
-                    // 除思考开关外全部沿用用户在该预设里配的参数（与原版识别角色同一写法）
-                    params = preset.params.copy(
-                        temperature = 0f,
-                        reasoningLevel = reasoningLevel
-                            .takeUnless { it == AiReasoningLevel.AUTO }
-                            ?: preset.params.reasoningLevel,
+            // 第一轮可能因输出预算/模型漏项而只返回部分序号。先写入有效结果，再只针对缺失序号补问；
+            // 补问仍使用同一段连续正文，因此不会丢失问答关系和后文追认线索。
+            var remaining = window.pending
+            val resolvedSpeakers = ArrayList<AiCastPayload.Speaker>()
+            var attempt = 0
+            while (remaining.isNotEmpty() && attempt <= MAX_MISSING_RETRIES) {
+                val retryPayload = payload.copy(
+                    pending = remaining,
+                    previousSpeakers = (previousSpeakers + resolvedSpeakers).takeLast(PREVIOUS_SPEAKERS),
+                )
+                val retrySystemPrompt = if (attempt == 0) {
+                    systemPrompt
+                } else {
+                    systemPrompt + "\n补充分配任务：上一轮有锚点遗漏。本次 pending 是唯一尚未分配的序号。" +
+                        "必须逐个输出 pending 中的每一个序号，不得省略；即使说话人不确定，也按上下文给最可能的角色主名。" +
+                        "不要重复输出已处理序号，不要改写正文，不要只返回有把握的部分。"
+                }
+                val parsed = parseResponse(
+                    streamChunk(
+                        model = preset.model,
+                        // 除思考开关外全部沿用用户在 AI 设置里配置的参数。
+                        params = preset.params.copy(
+                            temperature = 0f,
+                            reasoningLevel = reasoningLevel
+                                .takeUnless { it == AiReasoningLevel.AUTO }
+                                ?: preset.params.reasoningLevel,
+                        ),
+                        systemPrompt = retrySystemPrompt,
+                        payload = retryPayload,
+                        onStream = onStream,
                     ),
-                    systemPrompt = systemPrompt,
-                    payload = payload,
-                    onStream = onStream,
-                ),
-            ) ?: error("AI 的回复里读不出 JSON（被截断或换了格式）")
-            // 书级记忆滚动更新：AI 返回非空 memory 才覆盖（返回原样也安全）。
-            // 一次性群杂（新生甲/工作人员们）在存之前去掉：它们每章换个编号，
-            // 留着会让这张表一直长，把有名有姓的角色挤出模型的输出预算。
-            val nextMemory = parsed.memory?.let(CastMemoryMirror::dropThrowawayExtras).orEmpty()
-            if (nextMemory.isNotBlank()) {
-                AiCastPresetStore.setMemory(book.bookUrl, nextMemory, fromAi = true)
-                bookMemory = nextMemory
-                // setMemory mirrors AI-owned aliases into official profiles; refresh the
-                // in-memory snapshot so later chunks can resolve those aliases immediately.
-                profiles.clear()
-                profiles.addAll(appDb.bookKnowledgeDao.getCharacterProfiles(book.bookUrl, 500))
+                ) ?: error("AI 的回复里读不出 JSON（被截断或换了格式）")
+                // 书级记忆只在首轮回写，避免补问重复覆盖前一轮刚更新的档案。
+                if (attempt == 0) {
+                    val nextMemory = parsed.memory?.let(CastMemoryMirror::dropThrowawayExtras).orEmpty()
+                    if (nextMemory.isNotBlank()) {
+                        AiCastPresetStore.setMemory(book.bookUrl, nextMemory, fromAi = true)
+                        bookMemory = nextMemory
+                        profiles.clear()
+                        profiles.addAll(appDb.bookKnowledgeDao.getCharacterProfiles(book.bookUrl, 500))
+                    }
+                }
+                val retryWindow = CastWindow(retryPayload.excerpt, remaining)
+                val newlyAssigned = writeAssignments(
+                    book.bookUrl, chapterIndex, retryWindow, parsed.assignments, pools, known,
+                    thoughtOrdinals, profiles,
+                )
+                resolvedSpeakers += newlyAssigned
+                val resolvedOrdinals = resolvedSpeakers.map { it.ordinal }.toSet()
+                remaining = remaining.filterNot { it in resolvedOrdinals }
+                attempt++
             }
-            val speakerOf = writeAssignments(
-                book.bookUrl, chapterIndex, window, parsed.assignments, pools, known,
-                thoughtOrdinals, profiles,
-            )
-            // 下一块只带最后几条已定说话人：跨块时同一个人接着说不至于换个名字
-            previousSpeakers = speakerOf.takeLast(PREVIOUS_SPEAKERS)
+            // 重试次数耗尽仍未能判断的少数对白保持未分配，按默认音朗读；不伪造角色，也不影响已成功结果。
+            // 下一窗口继续带上本窗口末尾已确定的说话人，供连续对话判断。
+            previousSpeakers = (previousSpeakers + resolvedSpeakers)
+                .takeLast(PREVIOUS_SPEAKERS)
         }
     }
 
@@ -801,6 +824,8 @@ internal fun failureReason(error: Throwable): String =
 /** 一次请求送多少正文 / 多少个锚点；跨块时带上文最后几条已定说话人。 */
 private const val EXCERPT_CHARS = 9000
 private const val MAX_PENDING = 120
+/** 首轮之外最多补问两次，只重试仍未分配的锚点。 */
+private const val MAX_MISSING_RETRIES = 2
 private const val PREVIOUS_SPEAKERS = 12
 private const val SCENE_CHARS = 200
 private const val SCENE_PARAGRAPHS = 4
