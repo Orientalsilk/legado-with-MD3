@@ -207,11 +207,12 @@ class AiCastAssignUseCase(
                     "请检查正文解析结果及引号格式。",
             )
         }
-        val preset = if (offline) null else (
+        // 显式离线预设才强制离线；正常模式优先 AI。未配置模型/读取配置失败时自动降级。
+        val preset = if (offline) null else runCatching {
             aiProfileGateway.getTaskPreset(AiTaskType.IDENTIFY_CHARACTERS)
                 ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
-                ?: error("未配置 AI 模型，无法使用 AI 分配角色")
-            )
+        }.getOrNull()
+        var aiUnavailable = !offline && preset == null
         onStream(AiCastStream.ChapterStart(chapter.title))
         // 场景头部取开头几段：只取第一段常常拿到一个光秃秃的章节号，对判断谁在说话毫无用处
         val scene = paragraphs.asSequence().filter { it.isNotBlank() }.take(SCENE_PARAGRAPHS)
@@ -239,15 +240,17 @@ class AiCastAssignUseCase(
         var bookMemory = appDb.bookCastMemoryDao.get(book.bookUrl)?.memory.orEmpty()
         var previousSpeakers = emptyList<AiCastPayload.Speaker>()
         for (window in windows) {
-            if (offline) {
-                // 已有分配（手动或 AI）的句子不动，只补空缺
-                val already = if (reassign) emptySet() else
-                    appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex)
-                        .map { it.quoteOrdinal }.toSet()
-                // 离线分配：不联网、不用 AI，只按引号前后的「某某说」与称呼里的性别/年龄词判断；认不出的留空走旁白
+            // 离线规则只接手尚未落库的锚点。无论是 AI 部分漏项还是整次请求失败，
+            // 都不会覆盖已经确定的 AI/用户分配。
+            suspend fun assignOffline(pending: List<Int>): List<AiCastPayload.Speaker> {
+                if (pending.isEmpty()) return emptyList()
+                val existing = appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex)
+                    .map { it.quoteOrdinal }.toSet()
+                val unresolved = pending.filterNot { it in existing }
+                if (unresolved.isEmpty()) return emptyList()
                 val guesses = LocalCastGuesser.guess(
                     excerpt = window.excerpt,
-                    pending = window.pending.filter { it !in already },
+                    pending = unresolved,
                     known = known.filterNot { isPlaceholderName(it.name) }.map { row ->
                         val profile = profiles.firstOrNull { it.id == row.id }
                             ?: profiles.firstOrNull { it.name == row.name }
@@ -258,17 +261,27 @@ class AiCastAssignUseCase(
                     },
                     pools = pools,
                 ).map { AiCastPayload.Assignment(it.ordinal, it.name, it.pool) }
-                writeAssignments(
-                    book.bookUrl, chapterIndex, window, guesses, pools, known,
+                return writeAssignments(
+                    book.bookUrl, chapterIndex, CastWindow(window.excerpt, unresolved), guesses, pools, known,
                     thoughtOrdinals, profiles,
                 )
+            }
+
+            if (offline || aiUnavailable) {
+                // 手动选离线，或 AI 模型未配置/不可用：直接用本地规则完成可判断的部分。
+                val offlineSpeakers = assignOffline(window.pending)
+                previousSpeakers = (previousSpeakers + offlineSpeakers).takeLast(PREVIOUS_SPEAKERS)
                 continue
             }
-            val preset = preset ?: error("未配置 AI 模型")
+
+            val aiPreset = preset ?: run {
+                aiUnavailable = true
+                val offlineSpeakers = assignOffline(window.pending)
+                previousSpeakers = (previousSpeakers + offlineSpeakers).takeLast(PREVIOUS_SPEAKERS)
+                continue
+            }
             val payload = AiCastPayload.Request(
                 pools = pools,
-                // 代词/「旁白」这类占位主名不送：契约要求「优先沿用已有主名」，
-                // 送出「我」就等于把每一个没依据的句子都推向它
                 characters = known.filterNot { isPlaceholderName(it.name) }
                     .map { row ->
                         val profile = profiles.firstOrNull { it.id == row.id }
@@ -291,12 +304,10 @@ class AiCastAssignUseCase(
                 previousSpeakers = previousSpeakers,
                 bookMemory = bookMemory,
             )
-            // 第一轮可能因输出预算/模型漏项而只返回部分序号。先写入有效结果，再只针对缺失序号补问；
-            // 补问仍使用同一段连续正文，因此不会丢失问答关系和后文追认线索。
             var remaining = window.pending
             val resolvedSpeakers = ArrayList<AiCastPayload.Speaker>()
             var attempt = 0
-            while (remaining.isNotEmpty() && attempt <= MAX_MISSING_RETRIES) {
+            while (remaining.isNotEmpty() && attempt <= MAX_MISSING_RETRIES && !aiUnavailable) {
                 val retryPayload = payload.copy(
                     pending = remaining,
                     previousSpeakers = (previousSpeakers + resolvedSpeakers).takeLast(PREVIOUS_SPEAKERS),
@@ -308,44 +319,50 @@ class AiCastAssignUseCase(
                         "必须逐个输出 pending 中的每一个序号，不得省略；即使说话人不确定，也按上下文给最可能的角色主名。" +
                         "不要重复输出已处理序号，不要改写正文，不要只返回有把握的部分。"
                 }
-                val parsed = parseResponse(
-                    streamChunk(
-                        model = preset.model,
-                        // 除思考开关外全部沿用用户在 AI 设置里配置的参数。
-                        params = preset.params.copy(
-                            temperature = 0f,
-                            reasoningLevel = reasoningLevel
-                                .takeUnless { it == AiReasoningLevel.AUTO }
-                                ?: preset.params.reasoningLevel,
+                try {
+                    val parsed = parseResponse(
+                        streamChunk(
+                            model = aiPreset.model,
+                            params = aiPreset.params.copy(
+                                temperature = 0f,
+                                reasoningLevel = reasoningLevel
+                                    .takeUnless { it == AiReasoningLevel.AUTO }
+                                    ?: aiPreset.params.reasoningLevel,
+                            ),
+                            systemPrompt = retrySystemPrompt,
+                            payload = retryPayload,
+                            onStream = onStream,
                         ),
-                        systemPrompt = retrySystemPrompt,
-                        payload = retryPayload,
-                        onStream = onStream,
-                    ),
-                ) ?: error("AI 的回复里读不出 JSON（被截断或换了格式）")
-                // 书级记忆只在首轮回写，避免补问重复覆盖前一轮刚更新的档案。
-                if (attempt == 0) {
-                    val nextMemory = parsed.memory?.let(CastMemoryMirror::dropThrowawayExtras).orEmpty()
-                    if (nextMemory.isNotBlank()) {
-                        AiCastPresetStore.setMemory(book.bookUrl, nextMemory, fromAi = true)
-                        bookMemory = nextMemory
-                        profiles.clear()
-                        profiles.addAll(appDb.bookKnowledgeDao.getCharacterProfiles(book.bookUrl, 500))
+                    ) ?: error("AI 的回复里读不出 JSON（被截断或换了格式）")
+                    if (attempt == 0) {
+                        val nextMemory = parsed.memory?.let(CastMemoryMirror::dropThrowawayExtras).orEmpty()
+                        if (nextMemory.isNotBlank()) {
+                            AiCastPresetStore.setMemory(book.bookUrl, nextMemory, fromAi = true)
+                            bookMemory = nextMemory
+                            profiles.clear()
+                            profiles.addAll(appDb.bookKnowledgeDao.getCharacterProfiles(book.bookUrl, 500))
+                        }
                     }
+                    val retryWindow = CastWindow(retryPayload.excerpt, remaining)
+                    val newlyAssigned = writeAssignments(
+                        book.bookUrl, chapterIndex, retryWindow, parsed.assignments, pools, known,
+                        thoughtOrdinals, profiles,
+                    )
+                    resolvedSpeakers += newlyAssigned
+                    val resolvedOrdinals = resolvedSpeakers.map { it.i }.toSet()
+                    remaining = remaining.filterNot { it in resolvedOrdinals }
+                    attempt++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // 请求失败、超时、空响应或 JSON 无效：停止继续消耗 AI 请求，剩余项交给离线规则。
+                    aiUnavailable = true
                 }
-                val retryWindow = CastWindow(retryPayload.excerpt, remaining)
-                val newlyAssigned = writeAssignments(
-                    book.bookUrl, chapterIndex, retryWindow, parsed.assignments, pools, known,
-                    thoughtOrdinals, profiles,
-                )
-                resolvedSpeakers += newlyAssigned
-                val resolvedOrdinals = resolvedSpeakers.map { it.i }.toSet()
-                remaining = remaining.filterNot { it in resolvedOrdinals }
-                attempt++
             }
-            // 重试次数耗尽仍未能判断的少数对白保持未分配，按默认音朗读；不伪造角色，也不影响已成功结果。
-            // 下一窗口继续带上本窗口末尾已确定的说话人，供连续对话判断。
-            previousSpeakers = (previousSpeakers + resolvedSpeakers)
+
+            // AI 未完成的锚点交给离线规则补充；已写入的 AI 结果不会再次进入 pending。
+            val offlineSpeakers = assignOffline(remaining)
+            previousSpeakers = (previousSpeakers + resolvedSpeakers + offlineSpeakers)
                 .takeLast(PREVIOUS_SPEAKERS)
         }
     }
