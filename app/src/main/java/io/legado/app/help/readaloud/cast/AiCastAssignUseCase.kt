@@ -274,12 +274,7 @@ class AiCastAssignUseCase(
                 continue
             }
 
-            val aiPreset = preset ?: run {
-                aiUnavailable = true
-                val offlineSpeakers = assignOffline(window.pending)
-                previousSpeakers = (previousSpeakers + offlineSpeakers).takeLast(PREVIOUS_SPEAKERS)
-                continue
-            }
+            val aiPreset = checkNotNull(preset)
             val payload = AiCastPayload.Request(
                 pools = pools,
                 characters = known.filterNot { isPlaceholderName(it.name) }
