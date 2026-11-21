@@ -351,8 +351,7 @@ class AiCastAssignUseCase(
                         thoughtOrdinals, profiles,
                     )
                     resolvedSpeakers += newlyAssigned
-                    val resolvedOrdinals = resolvedSpeakers.map { it.i }.toSet()
-                    remaining = remaining.filterNot { it in resolvedOrdinals }
+                    remaining = missingCastOrdinals(window.pending, resolvedSpeakers.map { it.i })
                     attempt++
                 } catch (e: CancellationException) {
                     throw e
@@ -788,6 +787,16 @@ internal fun castChapterPlan(
     val end = (if (endChapter >= 0) endChapter else start + requestedCount - 1)
         .coerceIn(start, last)
     return (start..end).toList()
+}
+
+/**
+ * 本窗口已成功落库的锚点之外，仍需补问/离线兜底的序号。
+ *
+ * 用原始 pending 保持稳定顺序；响应重复序号不会让剩余项重复，也不会把窗口外序号混进来。
+ */
+internal fun missingCastOrdinals(pending: List<Int>, resolved: Collection<Int>): List<Int> {
+    val resolvedSet = resolved.toHashSet()
+    return pending.filterNot { it in resolvedSet }
 }
 
 /**
