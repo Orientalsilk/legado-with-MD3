@@ -43,7 +43,7 @@ sealed interface AiCastStream {
  * 锚点与渲染侧完全一致：正文取 ContentProcessor 处理后的 textList，用同一个
  * [CastMarkers.CastQuoteTracker] 数一级开引号 → ordinal 与注入/胶囊一一对应。
  * 上下文防误判：按原文顺序整段送正文（锚点标成 `⟦i⟧`），另带上一章末尾节选续语气。
- * 模型漏掉的锚点会用同一段正文进行最多两轮定向补问；仍无法判断的才留空走默认音，不做本地推断。
+ * 模型漏掉的锚点会用同一段正文进行最多两轮定向补问；剩余项自动交给离线规则补充，仍无法判断的才留空走默认音。
  * 提示词三层：预设要求（[AiCastPresetStore]，用户可编辑）+ 临时要求（仅本次）
  * + 固定输出契约；书级记忆（[io.legado.app.data.entities.BookCastMemory]）
  * 逐章滚动更新，把同一人物的不同称呼归并为同一角色。
