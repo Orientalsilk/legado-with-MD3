@@ -250,7 +250,7 @@ class AiCastAssignUseCase(
             // reassign=false 时，用户手动分配/之前已确认的结果是权威值：AI 和离线规则都只能处理空缺。
             val existingOrdinals = appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex)
                 .map { it.quoteOrdinal }.toSet()
-            val pendingWindow = window.pending.filterNot { it in existingOrdinals }
+            val pendingWindow = missingCastOrdinals(window.pending, existingOrdinals)
             if (pendingWindow.isEmpty()) continue
             val activeWindow = CastWindow(window.excerpt, pendingWindow)
 
