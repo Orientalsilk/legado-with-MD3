@@ -339,7 +339,7 @@ class AiCastAssignUseCase(
                     thoughtOrdinals, profiles,
                 )
                 resolvedSpeakers += newlyAssigned
-                val resolvedOrdinals = resolvedSpeakers.map { it.ordinal }.toSet()
+                val resolvedOrdinals = resolvedSpeakers.map { it.i }.toSet()
                 remaining = remaining.filterNot { it in resolvedOrdinals }
                 attempt++
             }
