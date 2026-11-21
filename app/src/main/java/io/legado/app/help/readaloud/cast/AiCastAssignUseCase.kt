@@ -247,6 +247,13 @@ class AiCastAssignUseCase(
         var bookMemory = appDb.bookCastMemoryDao.get(book.bookUrl)?.memory.orEmpty()
         var previousSpeakers = emptyList<AiCastPayload.Speaker>()
         for (window in windows) {
+            // reassign=false 时，用户手动分配/之前已确认的结果是权威值：AI 和离线规则都只能处理空缺。
+            val existingOrdinals = appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex)
+                .map { it.quoteOrdinal }.toSet()
+            val pendingWindow = window.pending.filterNot { it in existingOrdinals }
+            if (pendingWindow.isEmpty()) continue
+            val activeWindow = CastWindow(window.excerpt, pendingWindow)
+
             // 离线规则只接手尚未落库的锚点。无论是 AI 部分漏项还是整次请求失败，
             // 都不会覆盖已经确定的 AI/用户分配。
             suspend fun assignOffline(pending: List<Int>): List<AiCastPayload.Speaker> {
@@ -276,7 +283,7 @@ class AiCastAssignUseCase(
 
             if (offline || aiUnavailable) {
                 // 手动选离线，或 AI 模型未配置/不可用：直接用本地规则完成可判断的部分。
-                val offlineSpeakers = assignOffline(window.pending)
+                val offlineSpeakers = assignOffline(activeWindow.pending)
                 previousSpeakers = (previousSpeakers + offlineSpeakers).takeLast(PREVIOUS_SPEAKERS)
                 continue
             }
@@ -302,11 +309,11 @@ class AiCastAssignUseCase(
                 contextBefore = contextBefore,
                 contextAfter = contextAfter,
                 excerpt = window.excerpt,
-                pending = window.pending,
+                pending = activeWindow.pending,
                 previousSpeakers = previousSpeakers,
                 bookMemory = bookMemory,
             )
-            var remaining = window.pending
+            var remaining = activeWindow.pending
             val resolvedSpeakers = ArrayList<AiCastPayload.Speaker>()
             var attempt = 0
             while (remaining.isNotEmpty() && attempt <= MAX_MISSING_RETRIES && !aiUnavailable) {
@@ -351,7 +358,7 @@ class AiCastAssignUseCase(
                         thoughtOrdinals, profiles,
                     )
                     resolvedSpeakers += newlyAssigned
-                    remaining = missingCastOrdinals(window.pending, resolvedSpeakers.map { it.i })
+                    remaining = missingCastOrdinals(activeWindow.pending, resolvedSpeakers.map { it.i })
                     attempt++
                 } catch (e: CancellationException) {
                     throw e
