@@ -391,9 +391,16 @@ class AiCastAssignUseCase(
         profiles: MutableList<BookCharacterProfile>,
     ): List<AiCastPayload.Speaker> {
         val pending = window.pending.toSet()
-        val byOrdinal = assignments
-            .filter { it.i in pending }
-            .associateBy({ it.i }, { it })
+        val matchingAssignments = assignments.filter { it.i in pending }
+        val byOrdinal = matchingAssignments.associateBy({ it.i }, { it })
+        if (assignments.isNotEmpty() && matchingAssignments.isEmpty()) {
+            val returnedOrdinals = assignments.take(12).joinToString(", ") { it.i.toString() }
+            val expectedOrdinals = window.pending.take(12).joinToString(", ")
+            error(
+                "AI 返回了 ${assignments.size} 条分配，但序号全部不属于当前窗口。" +
+                    "本窗口序号：[$expectedOrdinals]；AI 返回序号：[$returnedOrdinals]",
+            )
+        }
         val speakers = ArrayList<AiCastPayload.Speaker>()
         for (ordinal in window.pending) {
             val answer = byOrdinal[ordinal] ?: continue
