@@ -690,7 +690,7 @@ class AiCastAssignUseCase(
                     name = name,
                     pool = pool,
                 )
-            }.orEmpty()
+            } ?: error("AI 回复缺少 assignments 数组；思考内容不等于最终分配结果")
             val memoryElement = root.get("memory")
             val memory = memoryElement?.takeIf { it.isJsonPrimitive }?.asString
             AiCastPayload.Response(assignments, memory)
