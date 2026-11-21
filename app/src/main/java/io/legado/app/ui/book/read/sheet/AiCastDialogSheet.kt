@@ -280,7 +280,7 @@ fun AiCastDialogSheet(
             )
         }
     }
-    val allDone = dialogueCount >= 0 && assignedCount >= dialogueCount
+    val allDone = dialogueCount > 0 && assignedCount == dialogueCount
     // 思考过程没有开关了：模型回了就永远显示，只是默认收起，收起时头部保留那颗秒表
     val thinkingPending = running && progress.reasoning.isBlank()
     val hasLog = progress.reasoning.isNotBlank() || progress.answer.isNotBlank() || thinkingPending
