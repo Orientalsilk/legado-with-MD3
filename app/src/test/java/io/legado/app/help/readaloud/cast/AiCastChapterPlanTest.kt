@@ -43,4 +43,26 @@ class AiCastChapterPlanTest {
         assertEquals("SocketTimeoutException", failureReason(java.net.SocketTimeoutException()))
         assertEquals("连不上", failureReason(IllegalStateException("连不上")))
     }
+    @Test
+    fun `eighty dialogue anchors with forty six AI assignments leave exactly thirty four for fallback`() {
+        val pending = (0 until 80).toList()
+        val aiAssigned = (0 until 46).toList()
+
+        val missing = missingCastOrdinals(pending, aiAssigned)
+
+        assertEquals(34, missing.size)
+        assertEquals((46 until 80).toList(), missing)
+    }
+
+    @Test
+    fun `duplicate or out of window AI ordinals do not change the missing list`() {
+        assertEquals(
+            listOf(2, 4),
+            missingCastOrdinals(
+                pending = listOf(1, 2, 3, 4),
+                resolved = listOf(1, 1, 3, 99),
+            ),
+        )
+    }
+
 }
