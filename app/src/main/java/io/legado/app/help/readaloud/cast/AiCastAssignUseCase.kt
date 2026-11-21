@@ -402,10 +402,14 @@ class AiCastAssignUseCase(
             )
         }
         val speakers = ArrayList<AiCastPayload.Speaker>()
+        var rejectedNames = 0
         for (ordinal in window.pending) {
             val answer = byOrdinal[ordinal] ?: continue
             val raw = answer.name.trim()
-            if (raw.isEmpty() || !CastMarkers.isValidName(raw) || isPlaceholderName(raw)) continue
+            if (raw.isEmpty() || !CastMarkers.isValidName(raw) || isPlaceholderName(raw)) {
+                rejectedNames++
+                continue
+            }
             val name = raw.take(24)
             // 池只给全新角色挑；已有角色一律原样复用，否则同一个人会被换出一堆音色
             val pool = resolvePool(answer.pool, pools, known)
@@ -433,6 +437,12 @@ class AiCastAssignUseCase(
                 thoughtQuote = ordinal in thoughtOrdinals,
             )
             speakers += AiCastPayload.Speaker(ordinal, character.name)
+        }
+        if (matchingAssignments.isNotEmpty() && speakers.isEmpty()) {
+            error(
+                "AI 返回了 ${matchingAssignments.size} 条本窗口分配，但角色名全部被程序过滤。" +
+                    "其中 ${rejectedNames} 条为空、非法或属于占位名称；未写入任何角色分配。",
+            )
         }
         return speakers
     }
