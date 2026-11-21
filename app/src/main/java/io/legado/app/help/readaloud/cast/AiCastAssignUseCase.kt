@@ -435,12 +435,10 @@ class AiCastAssignUseCase(
             )
         }
         val speakers = ArrayList<AiCastPayload.Speaker>()
-        var rejectedNames = 0
         for (ordinal in window.pending) {
             val answer = byOrdinal[ordinal] ?: continue
             val raw = answer.name.trim()
             if (raw.isEmpty() || !CastMarkers.isValidName(raw) || isPlaceholderName(raw)) {
-                rejectedNames++
                 continue
             }
             val name = raw.take(24)
@@ -471,12 +469,7 @@ class AiCastAssignUseCase(
             )
             speakers += AiCastPayload.Speaker(ordinal, character.name)
         }
-        if (matchingAssignments.isNotEmpty() && speakers.isEmpty()) {
-            error(
-                "AI 返回了 ${matchingAssignments.size} 条本窗口分配，但角色名全部被程序过滤。" +
-                    "其中 ${rejectedNames} 条为空、非法或属于占位名称；未写入任何角色分配。",
-            )
-        }
+        // 非法/占位角色名不落库；调用方会把这些序号视为未完成并进入补问。
         return speakers
     }
 
