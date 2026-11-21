@@ -208,10 +208,14 @@ class AiCastAssignUseCase(
             )
         }
         // 显式离线预设才强制离线；正常模式优先 AI。未配置模型/读取配置失败时自动降级。
-        val preset = if (offline) null else runCatching {
+        val preset = if (offline) null else try {
             aiProfileGateway.getTaskPreset(AiTaskType.IDENTIFY_CHARACTERS)
                 ?: aiProfileGateway.getTaskPreset(AiTaskType.CHAT)
-        }.getOrNull()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
         var aiUnavailable = !offline && preset == null
         onStream(AiCastStream.ChapterStart(chapter.title))
         // 场景头部取开头几段：只取第一段常常拿到一个光秃秃的章节号，对判断谁在说话毫无用处
