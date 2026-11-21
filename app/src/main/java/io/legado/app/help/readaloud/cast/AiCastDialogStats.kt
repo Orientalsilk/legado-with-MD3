@@ -1,6 +1,7 @@
 package io.legado.app.help.readaloud.cast
 
 import io.legado.app.data.appDb
+import io.legado.app.data.entities.ChapterRoleAssignment
 import io.legado.app.feature.reader.core.cast.CastMarkers
 import io.legado.app.feature.reader.core.source.ReaderChapterSourceParser
 import io.legado.app.help.book.BookHelp
@@ -36,9 +37,27 @@ object AiCastDialogStats {
                     if (tracker.feed(ch)) anchors++
                 }
             }
-            val assigned = appDb.chapterRoleAssignmentDao
-                .getForChapter(bookUrl, chapterIndex)
-                .count { it.characterId.isNotBlank() && it.characterName.isNotBlank() }
+            val assigned = countValidChapterAssignments(
+                appDb.chapterRoleAssignmentDao.getForChapter(bookUrl, chapterIndex),
+                anchors,
+            )
             assigned to anchors
         }
+}
+
+
+/**
+ * 只统计当前正文中仍存在的对话锚点。
+ *
+ * 章节正文被更新或重新解析后，旧分配行可能保留更大的 quoteOrdinal；
+ * 这些行不对应当前正文，不能虚增已分配数或让 UI 误报「全部完成」。
+ * 此处只修正统计，不删除数据库记录，也不影响后续恢复旧正文时的数据。
+ */
+internal fun countValidChapterAssignments(
+    assignments: List<ChapterRoleAssignment>,
+    dialogueCount: Int,
+): Int = assignments.count { row ->
+    row.quoteOrdinal in 0 until dialogueCount &&
+        row.characterId.isNotBlank() &&
+        row.characterName.isNotBlank()
 }
