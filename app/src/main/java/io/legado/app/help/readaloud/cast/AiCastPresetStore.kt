@@ -55,7 +55,7 @@ object AiCastPresetStore {
     private const val KEY_REASONING_LEVEL = "reasoningLevel"
     /** 固定行出厂文本的代际：默认文本升级时 +1，并在 [refreshLegacySlotDefaults] 里补上一代原文。 */
     private const val KEY_SLOT_DEFAULT_VERSION = "promptSlotDefaultVersion"
-    private const val SLOT_DEFAULT_VERSION = 2
+    private const val SLOT_DEFAULT_VERSION = 3
 
     /** 说话人归并策略（预设 1）。 */
     private const val MERGE_IDENTITIES =
@@ -74,8 +74,9 @@ object AiCastPresetStore {
 
     /** 允许漏分（预设 2「保守分配」的口径，与上面的逐条必答二选一）。 */
     private const val ANSWER_ONLY_WITH_EVIDENCE =
-        "允许漏分：只有这句话的说话人有明确证据（被点名、说话动作归属、上下文直接延续）时才输出该条，" +
-            "任何不确定都留空走默认音——宁可漏分，不可错分。沉默与非语言声响同样按这个标准处理。"
+        "允许漏分：先综合本句前后对白、问答关系、人物关系、代词指向、语气承接和已有角色档案判断；" +
+            "明确的上下文推断也算证据，不要求本句或紧邻段落出现人物姓名。只有全文上下文仍无法合理判断时才留空走默认音。" +
+            "沉默与非语言声响同样按上下文判断；不要仅因对白前没有人名标签就漏分。"
 
     /** 判断规则正文（[DEFAULT_JUDGMENT_RULES] = 来源标注 + 这段）。 */
     private const val JUDGMENT_RULES_BODY =
@@ -86,6 +87,11 @@ object AiCastPresetStore {
             "此时说话人通常在交替。用台词间的呼应来定人——上一句被『您/你』指向的那位是本句的回答者，" +
             "自称、被提到的亲属与下属关系、语气承接（反问、驳斥、顺承）都是依据。" +
             "例：甲说『我儿子被砍了』→ 接一句『失去爱子的痛苦我不敢妄自揣测』的必定是乙，不是甲。\n" +
+            "(2a) **没有人名标签不等于无法判断**：对白前没有『某某说/某某道』时，必须继续检查前后文。" +
+            "尤其注意对白之后才出现的动作归属（如『对面那人冷笑』『他放下茶杯』）、问答双方身份、" +
+            "上一句的称呼对象、人物正在执行的行动，以及同一场景中已经建立的关系；这些线索可以跨段落组合。" +
+            "不要只看引号前一小段，也不要要求姓名必须紧挨着引号。先给每个 pending 找最可能的已有角色，" +
+            "只有证据确实不足以区分时才留空。\n" +
             "(3) 台词里出现的名字不等于说话人：『李元老，您这话太过了』是**别人对李振富说**的话，" +
             "说话人不是李振富；第二人称称呼谁，被称呼者就是听者。\n" +
             "(4) 台词第一人称『我』是说话人自己的自称，不是叙述者也不是主角的名字；" +
