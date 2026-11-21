@@ -663,12 +663,13 @@ class AiCastAssignUseCase(
         if (start < 0 || end <= start) return null
         return runCatching {
             val root = JsonParser.parseString(raw.substring(start, end + 1)).asJsonObject
+            // 分配不完整不是任务失败：模型可能判断不出部分说话人，也可能返回空结果。
+            // 这类锚点保留未分配状态，朗读继续走默认音；只有字段存在但结构损坏才报格式错误。
             val assignmentsElement = root.get("assignments")
-                ?: error("AI 回复缺少 assignments 数组；模型没有按角色分配格式返回结果")
-            if (!assignmentsElement.isJsonArray) {
+            if (assignmentsElement != null && !assignmentsElement.isJsonArray) {
                 error("AI 回复中的 assignments 不是数组")
             }
-            val assignments = assignmentsElement.asJsonArray.mapIndexed { index, element ->
+            val assignments = assignmentsElement?.asJsonArray?.mapIndexed { index, element ->
                 if (!element.isJsonObject) {
                     error("AI 回复的第 ${index + 1} 条分配不是 JSON 对象")
                 }
