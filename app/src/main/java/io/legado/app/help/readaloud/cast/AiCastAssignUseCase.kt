@@ -656,14 +656,33 @@ class AiCastAssignUseCase(
         if (start < 0 || end <= start) return null
         return runCatching {
             val root = JsonParser.parseString(raw.substring(start, end + 1)).asJsonObject
-            val assignments = root.getAsJsonArray("assignments")?.map { element ->
+            val assignmentsElement = root.get("assignments")
+                ?: error("AI 回复缺少 assignments 数组；模型没有按角色分配格式返回结果")
+            if (!assignmentsElement.isJsonArray) {
+                error("AI 回复中的 assignments 不是数组")
+            }
+            val assignments = assignmentsElement.asJsonArray.mapIndexed { index, element ->
+                if (!element.isJsonObject) {
+                    error("AI 回复的第 ${index + 1} 条分配不是 JSON 对象")
+                }
                 val obj = element.asJsonObject
+                val ordinal = obj.get("i")
+                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isNumber }
+                    ?.asInt
+                    ?: error("AI 回复的第 ${index + 1} 条分配缺少有效序号 i")
+                val name = obj.get("name")
+                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                    ?.asString
+                    ?: error("AI 回复的第 ${index + 1} 条分配缺少有效角色名 name")
+                val pool = obj.get("pool")
+                    ?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }
+                    ?.asString.orEmpty()
                 AiCastPayload.Assignment(
-                    i = obj.get("i").asInt,
-                    name = obj.get("name").asString,
-                    pool = obj.get("pool")?.asString.orEmpty(),
+                    i = ordinal,
+                    name = name,
+                    pool = pool,
                 )
-            }.orEmpty()
+            }
             val memoryElement = root.get("memory")
             val memory = memoryElement?.takeIf { it.isJsonPrimitive }?.asString
             AiCastPayload.Response(assignments, memory)
