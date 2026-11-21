@@ -57,6 +57,7 @@ object AutoCastRunner {
             }
 
             var chapterFailed = false
+            var aiFallbackUsed = false
             val result = useCase.execute(
                 book = book,
                 startChapter = chapter.index,
@@ -66,13 +67,17 @@ object AutoCastRunner {
                     it.storageValue == ReadConfig.speechAnalysisReasoningLevel
                 } ?: AiReasoningLevel.OFF,
                 persistProgress = false,
+                onAiFallback = { aiFallbackUsed = true },
                 onProgress = { _, _, _, _, error ->
                     if (error != null) chapterFailed = true
                 },
             )
-            if (result.isSuccess && !chapterFailed) {
+            if (result.isSuccess && !chapterFailed && !aiFallbackUsed) {
                 AiCastPresetStore.markAutoChapterAnalyzed(book.bookUrl, chapter.index, fingerprint)
                 AppLog.put("自动人物与音色分析完成：${chapter.title}")
+            } else if (result.isSuccess && aiFallbackUsed) {
+                // 离线兜底成功也不记成 AI 已分析；下次触发时自动再试 AI，避免一次断网永久锁死离线结果。
+                AppLog.put("AI 暂不可用，已自动离线补充：${chapter.title}（保留未确定对白，下次自动重试 AI）")
             } else if (!quiet) {
                 AppLog.put(
                     "自动人物与音色分析失败：${chapter.title}（" +
