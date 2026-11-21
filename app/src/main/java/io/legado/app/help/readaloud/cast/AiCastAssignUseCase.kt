@@ -690,7 +690,7 @@ class AiCastAssignUseCase(
                     name = name,
                     pool = pool,
                 )
-            }
+            }.orEmpty()
             val memoryElement = root.get("memory")
             val memory = memoryElement?.takeIf { it.isJsonPrimitive }?.asString
             AiCastPayload.Response(assignments, memory)
