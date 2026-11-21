@@ -458,7 +458,7 @@ class TTSReadAloudService : BaseReadAloudService(), KoinComponent {
             pendingUtterances.clear()
             speechProgress.clear()
         }
-        val full = spokenFor(storedTail, base)
+        val full = ReadAloudTtsInputSanitizer.sanitize(spokenFor(storedTail, base))
         val limit = TextToSpeech.getMaxSpeechInputLength()
         var nextChunkOffset: Int? = null
         val spoken = if (limitLength && full.text.length > limit) {
