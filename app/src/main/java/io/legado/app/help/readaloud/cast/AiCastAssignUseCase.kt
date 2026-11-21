@@ -77,6 +77,7 @@ class AiCastAssignUseCase(
         onlyChapters: List<Int> = emptyList(),
         /** 后台自动逐章分析不应覆盖用户手动分配任务的续跑进度。 */
         persistProgress: Boolean = true,
+        onAiFallback: suspend () -> Unit = { },
         onProgress: suspend (Int, String, Int, Int, String?) -> Unit,
         onStream: suspend (AiCastStream) -> Unit = { },
     ): Result<Int> {
@@ -100,7 +101,7 @@ class AiCastAssignUseCase(
             if (persistProgress) persistRunState(book.bookUrl, plan, index, failed)
             val error = runCatching {
                 assignChapter(
-                    book, toc, index, reassign, pools, systemPrompt, reasoningLevel, onStream, offline,
+                    book, toc, index, reassign, pools, systemPrompt, reasoningLevel, onStream, offline, onAiFallback,
                 )
             }.exceptionOrNull()
             // 取消不算失败：这一章没跑完，靠上面写下的 resumeChapter 续跑就够了
@@ -163,6 +164,7 @@ class AiCastAssignUseCase(
         reasoningLevel: AiReasoningLevel,
         onStream: suspend (AiCastStream) -> Unit,
         offline: Boolean = false,
+        onAiFallback: suspend () -> Unit = { },
     ) = withContext(Dispatchers.IO) {
         // isValidName 走标记语法，先装载用户配置的符号
         CastSyntaxStore.current()
@@ -217,6 +219,7 @@ class AiCastAssignUseCase(
             null
         }
         var aiUnavailable = !offline && preset == null
+        if (aiUnavailable) onAiFallback()
         onStream(AiCastStream.ChapterStart(chapter.title))
         // 场景头部取开头几段：只取第一段常常拿到一个光秃秃的章节号，对判断谁在说话毫无用处
         val scene = paragraphs.asSequence().filter { it.isNotBlank() }.take(SCENE_PARAGRAPHS)
@@ -355,7 +358,10 @@ class AiCastAssignUseCase(
                     throw e
                 } catch (_: Exception) {
                     // 请求失败、超时、空响应或 JSON 无效：停止继续消耗 AI 请求，剩余项交给离线规则。
-                    aiUnavailable = true
+                    if (!aiUnavailable) {
+                        aiUnavailable = true
+                        onAiFallback()
+                    }
                 }
             }
 
