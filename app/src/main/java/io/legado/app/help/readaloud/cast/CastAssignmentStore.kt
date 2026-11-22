@@ -352,9 +352,6 @@ object CastAssignmentStore {
         val now = System.currentTimeMillis()
         val dao = appDb.chapterRoleAssignmentDao
         val existing = dao.getOne(bookUrl, chapterIndex, quoteOrdinal)
-        if (replaceOfflineOnly && existing != null &&
-            existing.assignmentSource != ChapterRoleAssignmentSource.OFFLINE
-        ) return false
         val effect = voiceEffect.trim().take(24).ifBlank {
             existing?.voiceEffect?.takeIf { preserveExistingEffect && it.isNotBlank() }
                 ?: run {
@@ -366,21 +363,24 @@ object CastAssignmentStore {
                     }
                 }
         }
-        dao.upsert(
-            ChapterRoleAssignment(
-                bookUrl = bookUrl,
-                chapterIndex = chapterIndex,
-                quoteOrdinal = quoteOrdinal,
-                characterId = characterId,
-                characterName = characterName,
-                voicePoolLabel = voicePoolLabel,
-                voiceEffect = effect,
-                assignmentSource = assignmentSource,
-                createdAt = existing?.createdAt ?: now,
-                updatedAt = now,
-            ),
+        val assignment = ChapterRoleAssignment(
+            bookUrl = bookUrl,
+            chapterIndex = chapterIndex,
+            quoteOrdinal = quoteOrdinal,
+            characterId = characterId,
+            characterName = characterName,
+            voicePoolLabel = voicePoolLabel,
+            voiceEffect = effect,
+            assignmentSource = assignmentSource,
+            createdAt = existing?.createdAt ?: now,
+            updatedAt = now,
         )
-        return true
+        return if (replaceOfflineOnly) {
+            dao.upsertIfOfflineOrMissing(assignment)
+        } else {
+            dao.upsert(assignment)
+            true
+        }
     }
 
     /**
