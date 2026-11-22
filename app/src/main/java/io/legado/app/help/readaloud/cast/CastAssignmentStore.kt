@@ -345,17 +345,25 @@ object CastAssignmentStore {
         voiceEffect: String = "",
         thoughtQuote: Boolean? = null,
         assignmentSource: String = ChapterRoleAssignmentSource.MANUAL,
-    ) {
+        replaceOfflineOnly: Boolean = false,
+        preserveExistingEffect: Boolean = false,
+    ): Boolean {
         val now = System.currentTimeMillis()
         val dao = appDb.chapterRoleAssignmentDao
         val existing = dao.getOne(bookUrl, chapterIndex, quoteOrdinal)
+        if (replaceOfflineOnly && existing != null &&
+            existing.assignmentSource != ChapterRoleAssignmentSource.OFFLINE
+        ) return false
         val effect = voiceEffect.trim().take(24).ifBlank {
-            val isThought = thoughtQuote ?: (quoteOrdinal in thoughtOrdinals(bookUrl, chapterIndex))
-            if (existing == null && isThought) {
-                VoiceEffectStore.usableName(VoiceEffectStore.THOUGHT_EFFECT)
-            } else {
-                VoiceEffectStore.NONE
-            }
+            existing?.voiceEffect?.takeIf { preserveExistingEffect && it.isNotBlank() }
+                ?: run {
+                    val isThought = thoughtQuote ?: (quoteOrdinal in thoughtOrdinals(bookUrl, chapterIndex))
+                    if (existing == null && isThought) {
+                        VoiceEffectStore.usableName(VoiceEffectStore.THOUGHT_EFFECT)
+                    } else {
+                        VoiceEffectStore.NONE
+                    }
+                }
         }
         dao.upsert(
             ChapterRoleAssignment(
@@ -371,6 +379,7 @@ object CastAssignmentStore {
                 updatedAt = now,
             ),
         )
+        return true
     }
 
     /**
