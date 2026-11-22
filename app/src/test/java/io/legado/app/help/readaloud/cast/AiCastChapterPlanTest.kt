@@ -1,5 +1,7 @@
 package io.legado.app.help.readaloud.cast
 
+import io.legado.app.data.entities.ChapterRoleAssignment
+import io.legado.app.data.entities.ChapterRoleAssignmentSource
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -52,6 +54,26 @@ class AiCastChapterPlanTest {
 
         assertEquals(34, missing.size)
         assertEquals((46 until 80).toList(), missing)
+    }
+
+    @Test
+    fun `AI can revisit offline fallback without overwriting manual or AI assignments`() {
+        val assignments = listOf(
+            ChapterRoleAssignment("book", 1, 0, "manual-id", "手动角色"),
+            ChapterRoleAssignment(
+                "book", 1, 1, "ai-id", "AI角色",
+                assignmentSource = ChapterRoleAssignmentSource.AI,
+            ),
+            ChapterRoleAssignment(
+                "book", 1, 2, "offline-id", "离线角色",
+                assignmentSource = ChapterRoleAssignmentSource.OFFLINE,
+            ),
+        )
+
+        val protected = protectedCastOrdinals(assignments)
+
+        assertEquals(setOf(0, 1), protected)
+        assertEquals(listOf(2), missingCastOrdinals(listOf(0, 1, 2), protected))
     }
 
     @Test
