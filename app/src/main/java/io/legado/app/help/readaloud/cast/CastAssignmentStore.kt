@@ -5,6 +5,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.CastCharacter
 import io.legado.app.data.entities.ChapterRoleAssignment
+import io.legado.app.data.entities.ChapterRoleAssignmentSource
 import io.legado.app.domain.model.readaloud.VoicePool
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
