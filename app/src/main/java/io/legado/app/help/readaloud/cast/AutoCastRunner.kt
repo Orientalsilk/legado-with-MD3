@@ -56,7 +56,7 @@ object AutoCastRunner {
                 return@withLock
             }
 
-            var chapterFailed = false
+            var chapterFailure: String? = null
             var aiFallbackUsed = false
             val result = useCase.execute(
                 book = book,
@@ -69,30 +69,18 @@ object AutoCastRunner {
                 persistProgress = false,
                 onAiFallback = { aiFallbackUsed = true },
                 onProgress = { _, _, _, _, error ->
-                    if (error != null) chapterFailed = true
+                    if (error != null) chapterFailure = error
                 },
             )
-            if (result.isSuccess && !chapterFailed && !aiFallbackUsed) {
+            if (result.isSuccess && chapterFailure == null && !aiFallbackUsed) {
                 AiCastPresetStore.markAutoChapterAnalyzed(book.bookUrl, chapter.index, fingerprint)
                 AppLog.put("自动人物与音色分析完成：${chapter.title}")
-            } else if (result.isSuccess && aiFallbackUsed) {
-                // 离线兜底成功也不记成 AI 已分析；下次触发时自动再试 AI，避免一次断网永久锁死离线结果。
-                AppLog.put("AI 暂不可用，已自动离线补充：${chapter.title}（保留未确定对白，下次自动重试 AI）")
+            } else if (result.isSuccess && chapterFailure == null && aiFallbackUsed) {
+                // 离线兜底成功也不记成 AI 已分析；下次触发时 AI 会重评离线来源的行。
+                AppLog.put("AI 暂不可用，已自动离线补充：${chapter.title}（下次自动重试 AI）")
             } else if (!quiet) {
-                AppLog.put(
-                    "自动人物与音色分析失败：${chapter.title}（" +
-                        "${result.exceptionOrNull()?.localizedMessage ?: "章节处理未完成"}），改用离线分配",
-                )
-                // AI 没配好/断网/限额时不让这章整章念旁白：退到免费的离线分配（不记账，下次 AI 可再来）
-                useCase.execute(
-                    book = book,
-                    startChapter = chapter.index,
-                    chapterCount = 1,
-                    reassign = false,
-                    presetId = OFFLINE_PRESET_ID,
-                    persistProgress = false,
-                    onProgress = { _, _, _, _, _ -> },
-                )
+                val reason = chapterFailure ?: result.exceptionOrNull()?.localizedMessage ?: "章节处理未完成"
+                AppLog.put("自动人物与音色分析失败：${chapter.title}（${reason}）")
             }
         } catch (e: CancellationException) {
             throw e
