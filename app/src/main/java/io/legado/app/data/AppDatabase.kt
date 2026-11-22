@@ -136,7 +136,7 @@ val appDb by lazy {
 }
 
 @Database(
-    version = 135,
+    version = 136,
     exportSchema = true,
     entities = [Book::class, BookGroup::class, BookSource::class, BookChapter::class,
         ReplaceRule::class, SearchBook::class, SearchKeyword::class, Cookie::class,
@@ -286,6 +286,8 @@ val appDb by lazy {
         // highlight_rules 新增四列夜间颜色：可空（null = 跟随白天那一栏），老规则读回来
         // 四列都是 NULL，解析口径见 HighlightRule.colorsFor。
         AutoMigration(from = 134, to = 135),
+        // 对话分配新增来源列：旧数据按 manual 保护，只有明确标记 offline 的兜底结果允许 AI 重评。
+        AutoMigration(from = 135, to = 136),
     ]
 )
 abstract class AppDatabase : RoomDatabase() {
