@@ -132,6 +132,8 @@ object BookCastStore {
         val trimmed = name.trim()
         if (trimmed.isEmpty() || !CastMarkers.isValidName(trimmed)) return false
         val character = appDb.castCharacterDao.getById(characterId) ?: return false
+        // ID 必须属于当前小说，不能因过期页面或错误回调修改另一本书的人物。
+        if (character.bookUrl != bookUrl) return false
         val pool = poolLabel.trim().take(12)
         if (character.name != trimmed || character.poolLabel != pool) {
             val clash = appDb.castCharacterDao.getByName(bookUrl, trimmed)
@@ -147,7 +149,9 @@ object BookCastStore {
                 updatedAt = System.currentTimeMillis(),
             ),
         )
-        appDb.castCharacterDao.update(updated)
+        // 以数据库唯一索引作为最终裁决。预查询仅用于快速反馈；此原子更新可挡住并发编辑。
+        // 返回 0 表示记录不存在或唯一键冲突，不能继续写镜像、绑定和章节分配。
+        if (appDb.castCharacterDao.updateIgnore(updated) <= 0) return false
         CastProfileMirror.ensure(updated)
         if (updated.voiceEffect != character.voiceEffect) {
             // 朗读侧的快照按预设表版本失效，不改这里新变声要等重启才听得到
