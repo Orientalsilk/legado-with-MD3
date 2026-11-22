@@ -5,6 +5,7 @@ import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Upsert
 import io.legado.app.data.entities.ChapterRoleAssignment
+import io.legado.app.data.entities.ChapterRoleAssignmentSource
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -92,7 +93,7 @@ interface ChapterRoleAssignmentDao {
             assignment.chapterIndex,
             assignment.quoteOrdinal,
         )
-        if (existing != null && existing.assignmentSource != "offline") return false
+        if (existing != null && existing.assignmentSource != ChapterRoleAssignmentSource.OFFLINE) return false
         upsert(assignment)
         return true
     }
