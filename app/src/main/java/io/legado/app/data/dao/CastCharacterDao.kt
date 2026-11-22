@@ -58,6 +58,13 @@ interface CastCharacterDao {
     @Update
     suspend fun update(character: CastCharacter)
 
+    /**
+     * 原子地更新人物档案；复合唯一键冲突时忽略并返回 0。
+     * 用于用户编辑人物身份字段，避免「先查询冲突、再更新」之间的并发竞态。
+     */
+    @Update(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun updateIgnore(character: CastCharacter): Int
+
     /** 拖动排序落库：只动排序位，不碰名字/音色（那些是编辑面板管的）。 */
     @Query("UPDATE cast_characters SET sortOrder = :sortOrder WHERE id = :id")
     suspend fun setSortOrder(id: String, sortOrder: Int)
