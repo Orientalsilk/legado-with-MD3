@@ -150,6 +150,7 @@ class ReadAloudCastDelegate(
                 reasoningStartedAt = 0L,
                 answer = "",
                 answerFolded = 0,
+                fallbackMessage = "",
             )
         }
         aiCastJob = scope.launch(Dispatchers.IO) {
@@ -332,7 +333,12 @@ class ReadAloudCastDelegate(
                     answerFolded = 0,
                     reasoningSeconds = 0,
                     reasoningStartedAt = 0L,
+                    fallbackMessage = "",
                 )
+            }
+
+            is AiCastStream.Fallback -> AiCastProgress.update {
+                it.copy(fallbackMessage = event.message)
             }
 
             is AiCastStream.Reasoning -> AiCastProgress.update {
