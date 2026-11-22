@@ -443,6 +443,15 @@ fun AiCastDialogSheet(
                             overflow = TextOverflow.Ellipsis,
                         )
                     }
+                    if (progress.fallbackMessage.isNotBlank()) {
+                        AppText(
+                            text = progress.fallbackMessage,
+                            style = LegadoTheme.typography.bodySmall,
+                            color = LegadoTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 3,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                     // 逐章失败明细：断网、连不上 AI、回复读不出来都得留一句话在这儿。
                     // 失败提示在跑完之后也要继续显示，不能只在 running 时出现。
                     val failureDetail = progress.failureText
