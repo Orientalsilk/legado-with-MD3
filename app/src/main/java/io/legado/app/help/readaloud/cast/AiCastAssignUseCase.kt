@@ -469,6 +469,8 @@ class AiCastAssignUseCase(
         val speakers = ArrayList<AiCastPayload.Speaker>()
         for (ordinal in window.pending) {
             val answer = byOrdinal[ordinal] ?: continue
+            val existing = appDb.chapterRoleAssignmentDao.getOne(bookUrl, chapterIndex, ordinal)
+            if (existing != null && existing.assignmentSource != ChapterRoleAssignmentSource.OFFLINE) continue
             val raw = answer.name.trim()
             if (raw.isEmpty() || !CastMarkers.isValidName(raw) || isPlaceholderName(raw)) {
                 continue
@@ -490,7 +492,7 @@ class AiCastAssignUseCase(
             }
             val knownIndex = known.indexOfFirst { it.id == character.id }
             if (knownIndex >= 0) known[knownIndex] = character else known += character
-            CastAssignmentStore.assign(
+            val saved = CastAssignmentStore.assign(
                 bookUrl = bookUrl,
                 chapterIndex = chapterIndex,
                 quoteOrdinal = ordinal,
@@ -499,8 +501,10 @@ class AiCastAssignUseCase(
                 voicePoolLabel = character.poolLabel,
                 thoughtQuote = ordinal in thoughtOrdinals,
                 assignmentSource = assignmentSource,
+                replaceOfflineOnly = true,
+                preserveExistingEffect = true,
             )
-            speakers += AiCastPayload.Speaker(ordinal, character.name)
+            if (saved) speakers += AiCastPayload.Speaker(ordinal, character.name)
         }
         // 非法/占位角色名不落库；调用方会把这些序号视为未完成并进入补问。
         return speakers
