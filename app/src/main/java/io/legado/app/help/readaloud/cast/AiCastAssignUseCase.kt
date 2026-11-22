@@ -287,8 +287,8 @@ class AiCastAssignUseCase(
 
             if (offline || aiUnavailable) {
                 // 手动选离线，或 AI 模型未配置/不可用：直接用本地规则完成可判断的部分。
-                val offlineSpeakers = assignOffline(activeWindow.pending)
-                previousSpeakers = (previousSpeakers + offlineSpeakers).takeLast(PREVIOUS_SPEAKERS)
+                assignOffline(activeWindow.pending)
+                // 离线猜测只是临时兜底，不作为后续 AI 窗口的「已确认说话人」上下文。
                 continue
             }
 
@@ -376,9 +376,9 @@ class AiCastAssignUseCase(
             }
 
             // AI 未完成的锚点交给离线规则补充；已写入的 AI 结果不会再次进入 pending。
-            val offlineSpeakers = assignOffline(remaining)
-            previousSpeakers = (previousSpeakers + resolvedSpeakers + offlineSpeakers)
-                .takeLast(PREVIOUS_SPEAKERS)
+            assignOffline(remaining)
+            // 只把 AI 已确认的结果传给下一窗口，避免离线猜测反过来污染 AI 的判断。
+            previousSpeakers = (previousSpeakers + resolvedSpeakers).takeLast(PREVIOUS_SPEAKERS)
         }
     }
 
