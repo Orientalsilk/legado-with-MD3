@@ -2,6 +2,7 @@ package io.legado.app.data.dao
 
 import androidx.room.Dao
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import io.legado.app.data.entities.ChapterRoleAssignment
 import kotlinx.coroutines.flow.Flow
@@ -76,6 +77,25 @@ interface ChapterRoleAssignmentDao {
 
     @Upsert
     suspend fun upsert(assignment: ChapterRoleAssignment)
+
+    /**
+     * AI may replace only a missing row or a temporary offline guess.
+     *
+     * The read/check/write must be one transaction: a user can manually assign the same
+     * quote while AI is processing. A separate getOne() followed by @Upsert has a race
+     * and could overwrite that manual choice.
+     */
+    @Transaction
+    suspend fun upsertIfOfflineOrMissing(assignment: ChapterRoleAssignment): Boolean {
+        val existing = getOne(
+            assignment.bookUrl,
+            assignment.chapterIndex,
+            assignment.quoteOrdinal,
+        )
+        if (existing != null && existing.assignmentSource != "offline") return false
+        upsert(assignment)
+        return true
+    }
 
     /** 角色改名/换池后同步所有引用它的分配行冗余字段（胶囊与标记全局更新）。 */
     @Query(
