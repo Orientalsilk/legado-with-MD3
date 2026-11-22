@@ -7,6 +7,7 @@ import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.BookChapter
 import io.legado.app.data.entities.ChapterRoleAssignment
+import io.legado.app.data.entities.ChapterRoleAssignmentSource
 import io.legado.app.data.entities.CastCharacter
 import io.legado.app.domain.gateway.AiProfileGateway
 import io.legado.app.domain.gateway.AiStreamEvent
