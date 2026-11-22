@@ -51,6 +51,8 @@ object AiCastProgress {
         val answer: String = "",
         /** [answer] 之前被折叠掉的字数。 */
         val answerFolded: Int = 0,
+        /** 当前章是否因 AI 不可用而自动切换离线规则。 */
+        val fallbackMessage: String = "",
         /**
          * 最近一次请求的原文（系统提示词 + 用户 JSON）。分配不准时先看它：
          * 到底是正文没送全、档案里带着错名字，还是模型自己判错了。
