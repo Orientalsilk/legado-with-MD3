@@ -37,6 +37,7 @@ sealed interface AiCastStream {
     data class ChapterStart(val chapterTitle: String) : AiCastStream
     data class Reasoning(val delta: String) : AiCastStream
     data class Answer(val delta: String) : AiCastStream
+    data class Fallback(val message: String) : AiCastStream
 }
 
 /**
@@ -221,8 +222,11 @@ class AiCastAssignUseCase(
             null
         }
         var aiUnavailable = !offline && preset == null
-        if (aiUnavailable) onAiFallback()
         onStream(AiCastStream.ChapterStart(chapter.title))
+        if (aiUnavailable) {
+            onAiFallback()
+            onStream(AiCastStream.Fallback("AI 模型不可用，已自动切换离线规则；无法判断的对白会保留未分配。"))
+        }
         // 场景头部取开头几段：只取第一段常常拿到一个光秃秃的章节号，对判断谁在说话毫无用处
         val scene = paragraphs.asSequence().filter { it.isNotBlank() }.take(SCENE_PARAGRAPHS)
             .joinToString("\n") { it.trim() }.take(SCENE_CHARS)
@@ -371,6 +375,7 @@ class AiCastAssignUseCase(
                     if (!aiUnavailable) {
                         aiUnavailable = true
                         onAiFallback()
+                        onStream(AiCastStream.Fallback("AI 请求失败，剩余未分配对白已自动切换离线规则；无法判断的对白会保留未分配。"))
                     }
                 }
             }
