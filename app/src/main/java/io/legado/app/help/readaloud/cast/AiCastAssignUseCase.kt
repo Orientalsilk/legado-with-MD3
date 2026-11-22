@@ -247,8 +247,9 @@ class AiCastAssignUseCase(
         var bookMemory = appDb.bookCastMemoryDao.get(book.bookUrl)?.memory.orEmpty()
         var previousSpeakers = emptyList<AiCastPayload.Speaker>()
         for (window in windows) {
-            // reassign=false 时，用户手动分配/之前已确认的结果是权威值：AI 和离线规则都只能处理空缺。
+            // 手动分配和历史已确认结果是权威值；只有明确标记为 offline 的临时兜底结果允许 AI 重评。
             val existingOrdinals = appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex)
+                .filter { it.assignmentSource != ChapterRoleAssignmentSource.OFFLINE }
                 .map { it.quoteOrdinal }.toSet()
             val pendingWindow = missingCastOrdinals(window.pending, existingOrdinals)
             if (pendingWindow.isEmpty()) continue
@@ -258,9 +259,10 @@ class AiCastAssignUseCase(
             // 都不会覆盖已经确定的 AI/用户分配。
             suspend fun assignOffline(pending: List<Int>): List<AiCastPayload.Speaker> {
                 if (pending.isEmpty()) return emptyList()
-                val existing = appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex)
+                val protected = appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex)
+                    .filter { it.assignmentSource != ChapterRoleAssignmentSource.OFFLINE }
                     .map { it.quoteOrdinal }.toSet()
-                val unresolved = pending.filterNot { it in existing }
+                val unresolved = pending.filterNot { it in protected }
                 if (unresolved.isEmpty()) return emptyList()
                 val guesses = LocalCastGuesser.guess(
                     excerpt = window.excerpt,
@@ -277,7 +279,7 @@ class AiCastAssignUseCase(
                 ).map { AiCastPayload.Assignment(it.ordinal, it.name, it.pool) }
                 return writeAssignments(
                     book.bookUrl, chapterIndex, CastWindow(window.excerpt, unresolved), guesses, pools, known,
-                    thoughtOrdinals, profiles,
+                    thoughtOrdinals, profiles, ChapterRoleAssignmentSource.OFFLINE,
                 )
             }
 
@@ -355,7 +357,7 @@ class AiCastAssignUseCase(
                     val retryWindow = CastWindow(retryPayload.excerpt, remaining)
                     val newlyAssigned = writeAssignments(
                         book.bookUrl, chapterIndex, retryWindow, parsed.assignments, pools, known,
-                        thoughtOrdinals, profiles,
+                        thoughtOrdinals, profiles, ChapterRoleAssignmentSource.AI,
                     )
                     resolvedSpeakers += newlyAssigned
                     remaining = missingCastOrdinals(activeWindow.pending, resolvedSpeakers.map { it.i })
@@ -450,6 +452,7 @@ class AiCastAssignUseCase(
         known: MutableList<CastCharacter>,
         thoughtOrdinals: Set<Int>,
         profiles: MutableList<BookCharacterProfile>,
+        assignmentSource: String,
     ): List<AiCastPayload.Speaker> {
         val pending = window.pending.toSet()
         val matchingAssignments = assignments.filter { it.i in pending }
@@ -494,6 +497,7 @@ class AiCastAssignUseCase(
                 characterName = character.name,
                 voicePoolLabel = character.poolLabel,
                 thoughtQuote = ordinal in thoughtOrdinals,
+                assignmentSource = assignmentSource,
             )
             speakers += AiCastPayload.Speaker(ordinal, character.name)
         }
