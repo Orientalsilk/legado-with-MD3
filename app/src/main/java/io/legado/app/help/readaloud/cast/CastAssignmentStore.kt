@@ -344,6 +344,7 @@ object CastAssignmentStore {
         voicePoolLabel: String,
         voiceEffect: String = "",
         thoughtQuote: Boolean? = null,
+        assignmentSource: String = ChapterRoleAssignmentSource.MANUAL,
     ) {
         val now = System.currentTimeMillis()
         val dao = appDb.chapterRoleAssignmentDao
@@ -365,6 +366,7 @@ object CastAssignmentStore {
                 characterName = characterName,
                 voicePoolLabel = voicePoolLabel,
                 voiceEffect = effect,
+                assignmentSource = assignmentSource,
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now,
             ),
