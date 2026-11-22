@@ -1553,6 +1553,10 @@ class HttpReadAloudService : BaseReadAloudService(),
         }
         val factory = CacheDataSource.Factory()
             .setCache(cache)
+            // Bump the stream cache namespace so corrupt entries from older releases cannot be reused.
+            .setCacheKeyFactory { dataSpec ->
+                "http-tts-stream-v2:${dataSpec.key ?: dataSpec.uri}"
+            }
             .setUpstreamDataSourceFactory(upstreamFactory)
             .setCacheWriteDataSinkFactory(cacheDataSinkFactory)
         return factory
