@@ -43,4 +43,13 @@ data class ChapterRoleAssignment(
     val voiceEffect: String = "",
     val createdAt: Long = System.currentTimeMillis(),
     val updatedAt: Long = System.currentTimeMillis(),
+    /** 分配来源：manual / ai / offline。旧数据默认按手动/已确认处理，绝不被 AI 自动覆盖。 */
+    @androidx.room.ColumnInfo(defaultValue = "'manual'")
+    val assignmentSource: String = ChapterRoleAssignmentSource.MANUAL,
 )
+
+object ChapterRoleAssignmentSource {
+    const val MANUAL = "manual"
+    const val AI = "ai"
+    const val OFFLINE = "offline"
+}
