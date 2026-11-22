@@ -6,6 +6,7 @@ import io.legado.app.data.appDb
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookCharacterProfile
 import io.legado.app.data.entities.BookChapter
+import io.legado.app.data.entities.ChapterRoleAssignment
 import io.legado.app.data.entities.CastCharacter
 import io.legado.app.domain.gateway.AiProfileGateway
 import io.legado.app.domain.gateway.AiStreamEvent
@@ -248,9 +249,9 @@ class AiCastAssignUseCase(
         var previousSpeakers = emptyList<AiCastPayload.Speaker>()
         for (window in windows) {
             // 手动分配和历史已确认结果是权威值；只有明确标记为 offline 的临时兜底结果允许 AI 重评。
-            val existingOrdinals = appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex)
-                .filter { it.assignmentSource != ChapterRoleAssignmentSource.OFFLINE }
-                .map { it.quoteOrdinal }.toSet()
+            val existingOrdinals = protectedCastOrdinals(
+                appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex),
+            )
             val pendingWindow = missingCastOrdinals(window.pending, existingOrdinals)
             if (pendingWindow.isEmpty()) continue
             val activeWindow = CastWindow(window.excerpt, pendingWindow)
@@ -259,9 +260,9 @@ class AiCastAssignUseCase(
             // 都不会覆盖已经确定的 AI/用户分配。
             suspend fun assignOffline(pending: List<Int>): List<AiCastPayload.Speaker> {
                 if (pending.isEmpty()) return emptyList()
-                val protected = appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex)
-                    .filter { it.assignmentSource != ChapterRoleAssignmentSource.OFFLINE }
-                    .map { it.quoteOrdinal }.toSet()
+                val protected = protectedCastOrdinals(
+                    appDb.chapterRoleAssignmentDao.getForChapter(book.bookUrl, chapterIndex),
+                )
                 val unresolved = pending.filterNot { it in protected }
                 if (unresolved.isEmpty()) return emptyList()
                 val guesses = LocalCastGuesser.guess(
@@ -809,6 +810,13 @@ internal fun missingCastOrdinals(pending: List<Int>, resolved: Collection<Int>):
     val resolvedSet = resolved.toHashSet()
     return pending.filterNot { it in resolvedSet }
 }
+
+/** 手动/AI 结果受保护；只有离线兜底行允许后续 AI 重新判断。 */
+internal fun protectedCastOrdinals(assignments: List<ChapterRoleAssignment>): Set<Int> =
+    assignments.asSequence()
+        .filter { it.assignmentSource != ChapterRoleAssignmentSource.OFFLINE }
+        .map { it.quoteOrdinal }
+        .toSet()
 
 /**
  * 把 AI 给的称呼归并到本书已有角色的**主名**；归不到返回 null（确实是本书没出现过的人）。
