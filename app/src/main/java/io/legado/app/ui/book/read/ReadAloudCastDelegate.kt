@@ -333,7 +333,6 @@ class ReadAloudCastDelegate(
                     answerFolded = 0,
                     reasoningSeconds = 0,
                     reasoningStartedAt = 0L,
-                    fallbackMessage = "",
                 )
             }
 
