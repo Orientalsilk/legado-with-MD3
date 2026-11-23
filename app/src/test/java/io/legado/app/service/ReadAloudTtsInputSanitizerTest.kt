@@ -43,7 +43,9 @@ class ReadAloudTtsInputSanitizerTest {
 
         assertEquals("甲乙丙丁 戊 己", cleaned.text)
         assertEquals(original.length, cleaned.sourceOffsets.last())
-        assertTrue(cleaned.sourceOffsets.zipWithNext().all { (a, b) -> a <= b })
+        for (index in 1 until cleaned.sourceOffsets.size) {
+            assertTrue(cleaned.sourceOffsets[index - 1] <= cleaned.sourceOffsets[index])
+        }
     }
 
     @Test
