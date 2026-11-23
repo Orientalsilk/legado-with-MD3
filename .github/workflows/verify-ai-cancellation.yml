@@ -8,6 +8,7 @@ on:
     paths:
       - "app/src/main/java/io/legado/app/domain/usecase/PrepareChapterSpeechPlanUseCase.kt"
       - "app/src/test/java/io/legado/app/domain/usecase/RunCatchingCancellableTest.kt"
+      - "app/src/test/java/io/legado/app/service/ReadAloudTtsInputSanitizerTest.kt"
       - ".github/workflows/verify-ai-cancellation.yml"
 
 permissions:
@@ -42,3 +43,13 @@ jobs:
             --tests io.legado.app.domain.usecase.RunCatchingCancellableTest \
             --no-daemon \
             --no-configuration-cache
+
+      - name: Upload focused test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-cancellation-test-reports
+          if-no-files-found: warn
+          path: |
+            app/build/test-results/testAppCoreDebugUnitTest/**
+            app/build/reports/tests/testAppCoreDebugUnitTest/**
