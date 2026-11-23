@@ -6,6 +6,7 @@ import io.legado.app.domain.model.readaloud.ContentSplitPolicy
 import io.legado.app.domain.model.readaloud.SpeechAnalysisMode
 import io.legado.app.domain.model.readaloud.SpeechPlanItem
 import io.legado.app.help.readaloud.segment.RuleBasedSpeechSegmenter
+import kotlinx.coroutines.CancellationException
 
 /**
  * Builds the persisted speech plan used by a read-aloud session.
@@ -37,7 +38,7 @@ class PrepareChapterSpeechPlanUseCase(
         val resolverVersion = if (requestedMode == SpeechAnalysisMode.Rule) {
             ruleVersion
         } else {
-            runCatching {
+            runCatchingCancellable {
                 refineSpeechWithAi.resolverVersion(
                     bookUrl,
                     requestedMode,
@@ -65,7 +66,7 @@ class PrepareChapterSpeechPlanUseCase(
         val resolved = if (effectiveMode == SpeechAnalysisMode.Rule) {
             locallyResolved
         } else {
-            runCatching {
+            runCatchingCancellable {
                 refineSpeechWithAi(
                     analysisResult = locallyResolved,
                     paragraphs = paragraphs,
@@ -96,3 +97,18 @@ fun ruleResolverVersion(policy: ContentSplitPolicy): String =
 /** 判断某个解析器版本是否就是该划分方式下的纯规则分段。 */
 fun isRuleResolverVersion(resolverVersion: String, policy: ContentSplitPolicy): Boolean =
     resolverVersion == ruleResolverVersion(policy)
+
+
+/**
+ * AI analysis may fall back on ordinary provider failures, but cancellation is a control signal:
+ * it must propagate so Stop/cancel never silently turns into another offline analysis pass.
+ */
+internal suspend fun <T> runCatchingCancellable(
+    block: suspend () -> T,
+): Result<T> = try {
+    Result.success(block())
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (error: Exception) {
+    Result.failure(error)
+}
