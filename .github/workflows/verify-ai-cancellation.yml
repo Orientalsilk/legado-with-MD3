@@ -1,0 +1,44 @@
+name: Verify AI cancellation handling
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "app/src/main/java/io/legado/app/domain/usecase/PrepareChapterSpeechPlanUseCase.kt"
+      - "app/src/test/java/io/legado/app/domain/usecase/RunCatchingCancellableTest.kt"
+      - ".github/workflows/verify-ai-cancellation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare pinned UI forks
+        uses: ./.github/actions/prepare-ui-forks
+
+      - name: Remove Aliyun mirrors (unreliable in CI)
+        run: sed -i '/maven.aliyun.com/d' settings.gradle
+
+      - name: Run focused cancellation regression tests
+        run: |
+          chmod +x gradlew
+          bash scripts/run-gradle-with-retry.sh ./gradlew \
+            testAppCoreDebugUnitTest \
+            --tests io.legado.app.domain.usecase.RunCatchingCancellableTest \
+            --no-daemon \
+            --no-configuration-cache
