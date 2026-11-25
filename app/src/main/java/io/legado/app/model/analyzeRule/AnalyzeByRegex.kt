@@ -1,13 +1,20 @@
 package io.legado.app.model.analyzeRule
 
+import android.util.LruCache
 import androidx.annotation.Keep
 
 @Keep
 object AnalyzeByRegex {
 
+    private val regexCache = LruCache<String, Regex>(64)
+
+    private fun getCachedRegex(pattern: String): Regex {
+        return regexCache.get(pattern) ?: Regex(pattern).also { regexCache.put(pattern, it) }
+    }
+
     fun getElement(res: String, regs: Array<String>, index: Int = 0): List<String>? {
         var vIndex = index
-        val regex = Regex(regs[vIndex])
+        val regex = getCachedRegex(regs[vIndex])
         val firstMatch = regex.find(res) ?: return null
         // 判断索引的规则是最后一个规则
         return if (vIndex + 1 == regs.size) {
@@ -28,18 +35,13 @@ object AnalyzeByRegex {
 
     fun getElements(res: String, regs: Array<String>, index: Int = 0): List<List<String>> {
         var vIndex = index
-        val regex = Regex(regs[vIndex])
-        if (regex.find(res) == null) {
-            return arrayListOf()
-        }
+        val regex = getCachedRegex(regs[vIndex])
+        val matches = regex.findAll(res)
         // 判断索引的规则是最后一个规则
         if (vIndex + 1 == regs.size) {
-            // 创建书息缓存数组
             val books = ArrayList<List<String>>()
-            // 提取列表
-            for (m in regex.findAll(res)) {
-                // 新建容器
-                val info = arrayListOf<String>()
+            for (m in matches) {
+                val info = ArrayList<String>(m.groupValues.size)
                 for (groupIndex in 0..m.groupValues.lastIndex) {
                     info.add(m.groupValues[groupIndex])
                 }
@@ -48,8 +50,11 @@ object AnalyzeByRegex {
             return books
         } else {
             val result = StringBuilder()
-            for (m in regex.findAll(res)) {
+            for (m in matches) {
                 result.append(m.value)
+            }
+            if (result.isEmpty()) {
+                return arrayListOf()
             }
             return getElements(result.toString(), regs, ++vIndex)
         }

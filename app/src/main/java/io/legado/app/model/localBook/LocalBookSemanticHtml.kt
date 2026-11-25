@@ -213,14 +213,21 @@ object LocalBookSemanticHtml {
         }
     }
 
+    private val CSS_COMMENT_REGEX = Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL)
+    private val CSS_BLOCK_REGEX = Regex("([^{}]+)\\{([^}]*)\\}")
+    private val WHITESPACE_REGEX = Regex("\\s+")
+    private val SELECTOR_SPLIT_REGEX = Regex("(?=[.#])")
+    private val CSS_ID_REGEX = Regex("[a-z0-9_-]+")
+    private val CSS_TAG_REGEX = Regex("[a-z][a-z0-9]*")
+
     /** Parse simple selectors and descendant chains with whitelisted props. */
     fun parseCssRules(cssText: String, baseOrder: Int = 0, maxRules: Int = Int.MAX_VALUE): List<CssRule> {
         if (maxRules <= 0) return emptyList()
         return runCatching {
-            val cleaned = cssText.replace(Regex("/\\*.*?\\*/", RegexOption.DOT_MATCHES_ALL), "")
+            val cleaned = cssText.replace(CSS_COMMENT_REGEX, "")
             val rules = mutableListOf<CssRule>()
             var order = baseOrder
-            val blockRegex = Regex("([^{}]+)\\{([^}]*)\\}")
+            val blockRegex = CSS_BLOCK_REGEX
             blocks@ for (match in blockRegex.findAll(cleaned)) {
                 if (rules.size >= maxRules) break@blocks
                 val selectorGroup = match.groupValues[1].trim()
@@ -237,7 +244,7 @@ object LocalBookSemanticHtml {
                     ) {
                         continue
                     }
-                    val parts = selector.split(Regex("\\s+")).map { parseSimpleSelector(it) }
+                    val parts = selector.split(WHITESPACE_REGEX).map { parseSimpleSelector(it) }
                     if (parts.any { it == null }) continue
                     val parsed = parts.filterNotNull()
                     val (tag, id, classes) = parsed.last()
@@ -259,14 +266,14 @@ object LocalBookSemanticHtml {
         var tag: String? = null
         var id: String? = null
         val classes = mutableSetOf<String>()
-        val parts = selector.split(Regex("(?=[.#])")).filter { it.isNotEmpty() }
+        val parts = selector.split(SELECTOR_SPLIT_REGEX).filter { it.isNotEmpty() }
         if (parts.isEmpty()) return null
         for (part in parts) {
             when {
                 part.startsWith("#") -> {
                     if (id != null) return null
                     id = part.drop(1).lowercase()
-                    if (id.isEmpty() || !id.matches(Regex("[a-z0-9_-]+"))) return null
+                    if (id.isEmpty() || !id.matches(CSS_ID_REGEX)) return null
                 }
                 part.startsWith(".") -> {
                     val cls = part.drop(1).lowercase()
@@ -275,7 +282,7 @@ object LocalBookSemanticHtml {
                 }
                 else -> {
                     tag = part.lowercase()
-                    if (!tag.matches(Regex("[a-z][a-z0-9]*"))) return null
+                    if (!tag.matches(CSS_TAG_REGEX)) return null
                 }
             }
         }

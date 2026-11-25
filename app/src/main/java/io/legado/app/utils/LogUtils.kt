@@ -15,6 +15,8 @@ import org.koin.core.context.GlobalContext
 import splitties.init.appCtx
 import java.text.SimpleDateFormat
 import java.util.Date
+import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.logging.FileHandler
 import java.util.logging.Level
 import java.util.logging.LogRecord
@@ -25,7 +27,17 @@ import kotlin.time.Duration.Companion.days
 @Suppress("unused")
 object LogUtils {
     const val TIME_PATTERN = "yy-MM-dd HH:mm:ss.SSS"
-    val logTimeFormat by lazy { SimpleDateFormat(TIME_PATTERN) }
+    private val dateFormatCache = ConcurrentHashMap<String, ThreadLocal<SimpleDateFormat>>()
+
+    private fun getThreadLocalFormat(pattern: String): SimpleDateFormat {
+        val holder = dateFormatCache.getOrPut(pattern) {
+            ThreadLocal.withInitial { SimpleDateFormat(pattern, Locale.getDefault()) }
+        }
+        return holder.get()!!
+    }
+
+    val logTimeFormat: SimpleDateFormat
+        get() = getThreadLocalFormat(TIME_PATTERN)
 
     private val otherSettingsGateway
         get() = GlobalContext.get().get<OtherSettingsGateway>()
@@ -106,9 +118,7 @@ object LogUtils {
      */
     @SuppressLint("SimpleDateFormat")
     fun getCurrentDateStr(pattern: String): String {
-        val date = Date()
-        val sdf = SimpleDateFormat(pattern)
-        return sdf.format(date)
+        return getThreadLocalFormat(pattern).format(Date())
     }
 
     fun logDeviceInfo() {

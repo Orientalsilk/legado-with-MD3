@@ -8,6 +8,7 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
+import java.util.concurrent.ConcurrentHashMap
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -30,6 +31,16 @@ object StringUtils {
     private val numberRegex = Regex("[0-9]+")
     private val numericRegex = Regex("-?[0-9]+")
     private val unicodeRegex = Regex("\\\\u(\\p{XDigit}{4})")
+
+    private val dateFormatCache = ConcurrentHashMap<String, ThreadLocal<SimpleDateFormat>>()
+
+    private fun getCachedDateFormat(pattern: String, locale: Locale = Locale.getDefault()): SimpleDateFormat {
+        val key = "${pattern}_${locale.toLanguageTag()}"
+        val holder = dateFormatCache.getOrPut(key) {
+            ThreadLocal.withInitial { SimpleDateFormat(pattern, locale) }
+        }
+        return holder.get()!!
+    }
 
     private val chnMap: HashMap<Char, Int>
         get() {
@@ -58,7 +69,7 @@ object StringUtils {
      * 将日期转换成昨天、今天、明天
      */
     fun dateConvert(source: String, pattern: String): String {
-        val format = SimpleDateFormat(pattern, Locale.getDefault())
+        val format = getCachedDateFormat(pattern)
         val calendar = Calendar.getInstance()
         kotlin.runCatching {
             val date = format.parse(source) ?: return ""
@@ -68,7 +79,7 @@ object StringUtils {
             val difSec = abs((curTime - date.time) / 1000)
             val difMin = difSec / 60
             val difHour = difMin / 60
-            val difDate = difHour / 60
+            val difDate = difHour / HOUR_OF_DAY
             val oldHour = calendar.get(Calendar.HOUR)
             //如果没有时间
             if (oldHour == 0) {
@@ -77,9 +88,7 @@ object StringUtils {
                     difDate == 0L -> "今天"
                     difDate < DAY_OF_YESTERDAY -> "昨天"
                     else -> {
-                        @SuppressLint("SimpleDateFormat")
-                        val convertFormat = SimpleDateFormat("yyyy-MM-dd")
-                        convertFormat.format(date)
+                        getCachedDateFormat("yyyy-MM-dd").format(date)
                     }
                 }
             }
@@ -90,9 +99,7 @@ object StringUtils {
                 difHour < HOUR_OF_DAY -> difHour.toString() + "小时前"
                 difDate < DAY_OF_YESTERDAY -> "昨天"
                 else -> {
-                    @SuppressLint("SimpleDateFormat")
-                    val convertFormat = SimpleDateFormat("yyyy-MM-dd")
-                    convertFormat.format(date)
+                    getCachedDateFormat("yyyy-MM-dd").format(date)
                 }
             }
         }.onFailure {
@@ -108,7 +115,7 @@ object StringUtils {
      */
     fun formatFriendlyDate(dateString: String, pattern: String = "yyyy-MM-dd"): String {
         return kotlin.runCatching {
-            val format = SimpleDateFormat(pattern, Locale.getDefault())
+            val format = getCachedDateFormat(pattern)
             val date = format.parse(dateString) ?: return@runCatching dateString
             val inputDate = date.toInstant().atZone(ZoneId.systemDefault()).toLocalDate()
             val today = LocalDate.now(ZoneId.systemDefault())

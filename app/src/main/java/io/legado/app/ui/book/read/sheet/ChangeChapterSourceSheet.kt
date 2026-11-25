@@ -176,7 +176,7 @@ private fun TocContent(
     } else {
         val listState = rememberLazyListState()
         LaunchedEffect(state.currentTocIndex, state.tocItems) {
-            if (state.currentTocIndex >= 0) {
+            if (state.currentTocIndex in state.tocItems.indices) {
                 listState.scrollToItem(state.currentTocIndex)
             }
         }
@@ -185,7 +185,7 @@ private fun TocContent(
             state = listState,
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            itemsIndexed(state.tocItems) { index, chapter ->
+            itemsIndexed(state.tocItems, key = { _, chapter -> "${chapter.index}_${chapter.url}" }) { index, chapter ->
                 SelectionItemCard(
                     title = chapter.title,
                     containerColor = LegadoTheme.colorScheme.surfaceContainerLow,

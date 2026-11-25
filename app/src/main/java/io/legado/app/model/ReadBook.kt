@@ -1,6 +1,7 @@
 package io.legado.app.model
 
 import io.legado.app.constant.AppLog
+import kotlinx.coroutines.CancellationException
 import io.legado.app.constant.EventBus
 import io.legado.app.constant.PageAnim.scrollPageAnim
 import io.legado.app.data.appDb
@@ -1032,6 +1033,7 @@ object ReadBook : CoroutineScope by MainScope(), KoinComponent {
         try {
             readRecordRepository.saveReadSession(sessionToSave)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             AppLog.put("保存阅读会话出错: ${sessionToSave.bookName}", e)
             return
         }
@@ -1063,6 +1065,7 @@ object ReadBook : CoroutineScope by MainScope(), KoinComponent {
         try {
             readRecordRepository.saveReadSession(session)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             AppLog.put("保存阅读会话出错: ${session.bookName}", e)
         }
     }
@@ -1572,6 +1575,7 @@ object ReadBook : CoroutineScope by MainScope(), KoinComponent {
                 }
                 success?.invoke()
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 AppLog.put("加载正文出错\n${e.localizedMessage}")
             } finally {
                 removeLoading(index)

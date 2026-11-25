@@ -333,7 +333,7 @@ fun SearchContentScreen(
                             state = listState,
                             modifier = Modifier.fillMaxSize()
                         ) {
-                            itemsIndexed(searchResults) { index, result ->
+                            itemsIndexed(searchResults, key = { _, result -> "${result.chapterIndex}_${result.queryIndexInChapter}_${result.resultCountWithinChapter}" }) { index, result ->
                                 SearchResultItem(
                                     modifier = Modifier.animateItem(),
                                     result = result,

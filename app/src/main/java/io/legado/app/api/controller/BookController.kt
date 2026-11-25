@@ -39,6 +39,7 @@ import kotlinx.coroutines.runBlocking
 import splitties.init.appCtx
 import org.koin.core.context.GlobalContext
 import java.io.File
+import java.util.Collections
 import java.util.WeakHashMap
 import java.util.concurrent.TimeUnit
 
@@ -46,10 +47,9 @@ object BookController {
 
     private val bookshelfGateway by lazy { GlobalContext.get().get<BookshelfSettingsGateway>() }
 
-    private lateinit var book: Book
-    private var bookSource: BookSource? = null
-    private var bookUrl: String = ""
-    private val defaultCoverCache by lazy { WeakHashMap<Drawable, Bitmap>() }
+    private val defaultCoverCache by lazy {
+        Collections.synchronizedMap(WeakHashMap<Drawable, Bitmap>())
+    }
 
     /**
      * 书架所有书籍
@@ -94,14 +94,17 @@ object BookController {
             returnData.setData(ftBitmap.get(3, TimeUnit.SECONDS))
         } catch (e: Exception) {
             try {
-                val defaultBitmap = defaultCoverCache.getOrPut(BookCover.defaultDrawable) {
-                    Glide.with(appCtx)
-                        .asBitmap()
-                        .load(BookCover.defaultDrawable.toBitmap())
-                        .override(84, 112)
-                        .centerCrop()
-                        .submit()
-                        .get()
+                val defaultKey = BookCover.defaultDrawable
+                val defaultBitmap = synchronized(defaultCoverCache) {
+                    defaultCoverCache.getOrPut(defaultKey) {
+                        Glide.with(appCtx)
+                            .asBitmap()
+                            .load(defaultKey.toBitmap())
+                            .override(84, 112)
+                            .centerCrop()
+                            .submit()
+                            .get()
+                    }
                 }
                 returnData.setData(defaultBitmap)
             } catch (e: Exception) {
@@ -120,12 +123,9 @@ object BookController {
         val src = parameters["path"]?.firstOrNull()
             ?: return returnData.setErrorMsg("图片链接为空")
         val width = parameters["width"]?.firstOrNull()?.toInt() ?: 640
-        if (this.bookUrl != bookUrl) {
-            this.book = appDb.bookDao.getBook(bookUrl)
-                ?: return returnData.setErrorMsg("bookUrl不对")
-            this.bookSource = appDb.bookSourceDao.getBookSource(book.origin)
-        }
-        this.bookUrl = bookUrl
+        val book = appDb.bookDao.getBook(bookUrl)
+            ?: return returnData.setErrorMsg("bookUrl不对")
+        val bookSource = appDb.bookSourceDao.getBookSource(book.origin)
         val bitmap = runBlocking {
             ImageProvider.cacheImage(book, src, bookSource)
             ImageProvider.getImage(book, src, width)

@@ -8,6 +8,21 @@ import kotlin.math.min
 @Suppress("SameParameterValue", "RegExpRedundantEscape")
 object ContentHelp {
 
+    private val QUOT_ENTITY_REGEX = "&quot;".toRegex()
+    private val COLON_QUOTE_REGEX = "[:：]['\"‘”“]+".toRegex()
+    private val QUOTE_BREAK_REGEX = "[\"”“]+\\s*[\"”“][\\s\"”“]*".toRegex()
+    private val NEWLINE_SPACE_REGEX = "\n(\\s*)".toRegex()
+    private val SPACE_ALL_REGEX = "[\u3000\\s]+".toRegex()
+    private val SPACE_SINGLE_REGEX = "[\u3000\\s]".toRegex()
+    private val QUOTE_PAIR_REGEX = "[\"”“]+\\s*[\"”“]+".toRegex()
+    private val QUOTE_PUNCT_QUOTE_REGEX = "[\"”“]+(？。！?!~)[\"”“]+".toRegex()
+    private val QUOTE_PUNCT_NONQUOTE_REGEX = "[\"”“]+(？。！?!~)([^\"”“])".toRegex()
+    private val DIALOGUE_VERB_DOT_REGEX = "([问说喊唱叫骂道着答])[\\.。]".toRegex()
+    private val LEADING_SPACE_REGEX = "^\\s+".toRegex()
+    private val TRAILING_SPACE_QUOTE_REGEX = "\\s*[\"”“]+\\s*[\"”“][\\s\"”“]*".toRegex()
+    private val COLON_SPACE_QUOTE_REGEX = "[:：][”“\"\\s]+".toRegex()
+    private val LINE_QUOTE_COLON_REGEX = "\n[\"“”]([^\n\"“”]+)([,:，：][\"”“])([^\n\"“”]+)".toRegex()
+
     /**
      * 段落重排算法入口。把整篇内容输入，连接错误的分段，再把每个段落调用其他方法重新切分
      *
@@ -21,11 +36,11 @@ object ContentHelp {
         var content1 = content
         val dict = makeDict(content1)
         val prepared = content1
-            .replaceMapped("&quot;".toRegex(), "“", projection)
-            .replaceMapped("[:：]['\"‘”“]+".toRegex(), "：“", projection)
-            .replaceMapped("[\"”“]+\\s*[\"”“][\\s\"”“]*".toRegex(), "”\n“", projection)
+            .replaceMapped(QUOT_ENTITY_REGEX, "“", projection)
+            .replaceMapped(COLON_QUOTE_REGEX, "：“", projection)
+            .replaceMapped(QUOTE_BREAK_REGEX, "”\n“", projection)
 
-        var p = prepared.split("\n(\\s*)".toRegex()).toTypedArray()
+        var p = prepared.split(NEWLINE_SPACE_REGEX).toTypedArray()
 
         //初始化StringBuilder的长度,在原content的长度基础上做冗余
         var buffer = StringBuilder((content1.length * 1.15).toInt())
@@ -34,7 +49,7 @@ object ContentHelp {
         val dropTitle = chapterName.trim { it <= ' ' } == p[0].trim { it <= ' ' }
         if (!dropTitle) {
             // 去除段落内空格。unicode 3000 象形字间隔（中日韩符号和标点），不包含在\s内
-            buffer.append(p[0].replace("[\u3000\\s]+".toRegex(), ""))
+            buffer.append(p[0].replace(SPACE_ALL_REGEX, ""))
         }
 
         //如果原文存在分段错误，需要把段落重新黏合
@@ -47,7 +62,7 @@ object ContentHelp {
             }
             // 段落开头以外的地方不应该有空格
             // 去除段落内空格。unicode 3000 象形字间隔（中日韩符号和标点），不包含在\s内
-            buffer.append(p[i].replace("[\u3000\\s]".toRegex(), ""))
+            buffer.append(p[i].replace(SPACE_SINGLE_REGEX, ""))
         }
         if (projection != null) {
             val before = if (dropTitle) {
@@ -61,14 +76,11 @@ object ContentHelp {
         //         ”。“处理为”。\n“。不考虑“？”  “！”的情况。
         // ”。xxx处理为 ”。\n xxx
         val segmented = buffer.toString()
-            .replaceMapped("[\"”“]+\\s*[\"”“]+".toRegex(), "”\n“", projection)
-            .replaceMapped("[\"”“]+(？。！?!~)[\"”“]+".toRegex(), "”$1\n“", projection)
-            .replaceMapped("[\"”“]+(？。！?!~)([^\"”“])".toRegex(), "”$1\n$2", projection)
-            .replaceMapped(
-                "([问说喊唱叫骂道着答])[\\.。]".toRegex(),
-                "$1。\n", projection
-            )
-        p = segmented.split("\n".toRegex()).toTypedArray()
+            .replaceMapped(QUOTE_PAIR_REGEX, "”\n“", projection)
+            .replaceMapped(QUOTE_PUNCT_QUOTE_REGEX, "”$1\n“", projection)
+            .replaceMapped(QUOTE_PUNCT_NONQUOTE_REGEX, "”$1\n$2", projection)
+            .replaceMapped(DIALOGUE_VERB_DOT_REGEX, "$1。\n", projection)
+        p = segmented.split('\n').toTypedArray()
         buffer = StringBuilder((content1.length * 1.15).toInt())
         val projectedParts = mutableListOf<TextProjection>()
         var partStart = 0
@@ -84,11 +96,11 @@ object ContentHelp {
         buffer = reduceLength(buffer)
         if (projection != null) check(projection.bindWhitespace(checkNotNull(beforeReduce), buffer.toString()))
         content1 = (buffer.toString() //         处理章节头部空格和换行
-            .replaceMapped("^\\s+".toRegex(), "", projection)
-            .replaceMapped("\\s*[\"”“]+\\s*[\"”“][\\s\"”“]*".toRegex(), "”\n“", projection)
-            .replaceMapped("[:：][”“\"\\s]+".toRegex(), "：“", projection)
-            .replaceMapped("\n[\"“”]([^\n\"“”]+)([,:，：][\"”“])([^\n\"“”]+)".toRegex(), "\n$1：“$3", projection)
-            .replaceMapped("\n(\\s*)".toRegex(), "\n", projection))
+            .replaceMapped(LEADING_SPACE_REGEX, "", projection)
+            .replaceMapped(TRAILING_SPACE_QUOTE_REGEX, "”\n“", projection)
+            .replaceMapped(COLON_SPACE_QUOTE_REGEX, "：“", projection)
+            .replaceMapped(LINE_QUOTE_COLON_REGEX, "\n$1：“$3", projection)
+            .replaceMapped(NEWLINE_SPACE_REGEX, "\n", projection))
         return content1
     }
 
@@ -102,7 +114,7 @@ object ContentHelp {
      * @return
      */
     private fun reduceLength(str: StringBuilder): StringBuilder {
-        val p = str.toString().split("\n".toRegex()).toTypedArray()
+        val p = str.toString().split('\n').toTypedArray()
         val l = p.size
         val b = BooleanArray(l)
         for (i in 0 until l) {

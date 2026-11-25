@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.drawable.Drawable
+import android.util.LruCache
 import androidx.annotation.Keep
 import androidx.core.graphics.drawable.toDrawable
 import com.bumptech.glide.Glide
@@ -87,8 +88,8 @@ object BookCover : KoinComponent {
         return paths[random.nextInt(paths.size)]
     }
 
-    // 缓存随机封面 Drawable，避免重复解码
-    private val randomDrawableCache = mutableMapOf<String, Drawable>()
+    // 缓存随机封面 Drawable，使用有界 LruCache 避免内存泄漏，并加锁保证多线程安全
+    private val randomDrawableCache = LruCache<String, Drawable>(32)
 
     fun getRandomDefaultDrawable(
         seed: Any? = null,
@@ -97,14 +98,14 @@ object BookCover : KoinComponent {
         val randomPath = getRandomDefaultPath(seed, isNight)
             ?: return appCtx.resources.getDrawable(R.drawable.image_cover_default, null)
 
-        // 生成缓存键
         val cacheKey = "$randomPath-${isNight}"
 
-        // 从缓存中获取，如果没有则解码并缓存
-        val drawable = randomDrawableCache.getOrPut(cacheKey) {
-            kotlin.runCatching {
+        val drawable = synchronized(randomDrawableCache) {
+            randomDrawableCache.get(cacheKey) ?: kotlin.runCatching {
                 BitmapUtils.decodeBitmap(randomPath, 600, 900)!!.toDrawable(appCtx.resources)
-            }.getOrDefault(appCtx.resources.getDrawable(R.drawable.image_cover_default, null))
+            }.getOrDefault(appCtx.resources.getDrawable(R.drawable.image_cover_default, null)).also {
+                randomDrawableCache.put(cacheKey, it)
+            }
         }
 
         // 返回克隆的实例并 mutate，防止多个 View 共享状态（如 bounds）导致显示异常

@@ -316,18 +316,18 @@ object ZipUtils {
     fun getFilesPath(zipFile: File?): List<String>? {
         if (zipFile == null) return null
         val paths = ArrayList<String>()
-        val zip = ZipFile(zipFile)
-        val entries = zip.entries()
-        while (entries.hasMoreElements()) {
-            val entryName = (entries.nextElement() as ZipEntry).name
-            if (entryName.contains("../")) {
-                DebugLog.e(javaClass.name, "entryName: $entryName is dangerous!")
-                paths.add(entryName)
-            } else {
-                paths.add(entryName)
+        ZipFile(zipFile).use { zip ->
+            val entries = zip.entries()
+            while (entries.hasMoreElements()) {
+                val entryName = (entries.nextElement() as ZipEntry).name
+                if (entryName.contains("../")) {
+                    DebugLog.e(javaClass.name, "entryName: $entryName is dangerous!")
+                    paths.add(entryName)
+                } else {
+                    paths.add(entryName)
+                }
             }
         }
-        zip.close()
         return paths
     }
 
