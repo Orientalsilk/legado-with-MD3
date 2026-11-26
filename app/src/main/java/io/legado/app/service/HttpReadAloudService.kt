@@ -47,6 +47,7 @@ import io.legado.app.domain.gateway.CloudTtsEngineGateway
 import io.legado.app.domain.gateway.ReadAloudSettingsGateway
 import io.legado.app.domain.model.readaloud.ReadAloudPlaybackCursor
 import io.legado.app.domain.model.readaloud.ReadAloudPlaybackQueue
+import io.legado.app.domain.model.readaloud.CharacterPerformanceProfile
 import io.legado.app.domain.model.readaloud.ReadAloudVoice
 import io.legado.app.help.readaloud.cast.CastVoicePicker
 import java.util.concurrent.ConcurrentHashMap
@@ -1837,7 +1838,7 @@ class HttpReadAloudService : BaseReadAloudService(),
         speakText: String,
         defaultHttpTts: HttpTTS,
         cueEmotion: String,
-        characterPerformance: String?,
+        characterPerformance: CharacterPerformanceProfile?,
         cueRoleType: SpeechRoleType,
     ) {
         when (voice.engineType) {
