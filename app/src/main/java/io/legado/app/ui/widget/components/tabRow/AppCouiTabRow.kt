@@ -111,7 +111,7 @@ private fun AppCouiScrollableTabRow(
             contentPadding = contentPadding,
             horizontalArrangement = Arrangement.spacedBy(CouiTabSpacing),
         ) {
-            items(titles.size) { index ->
+            items(titles.size, key = { index -> index }) { index ->
                 AppCouiTab(titles[index], selectedIndex == index, { onTabSelected(index) }, backdrop)
             }
         }

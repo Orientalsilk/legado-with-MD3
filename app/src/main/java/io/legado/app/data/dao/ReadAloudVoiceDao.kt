@@ -51,6 +51,9 @@ interface ReadAloudVoiceDao {
     @Query("delete from read_aloud_voices where engineType = 'http' and engineId = :engineId")
     suspend fun deleteHttpVoices(engineId: String)
 
+    @Query("delete from read_aloud_voices where engineType = 'http' and engineId in (:engineIds)")
+    suspend fun deleteHttpVoicesByIds(engineIds: Set<String>)
+
     /** 包括排除行；直接以源表为准，不能使用 UI combine 的不同时间快照。 */
     @Query("delete from read_aloud_voices where engineType = 'http' " +
         "and not exists (select 1 from httpTTS where cast(httpTTS.id as text) = engineId)")

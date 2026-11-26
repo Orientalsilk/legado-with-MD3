@@ -1023,7 +1023,7 @@ private fun EpisodeSection(
             state = listState,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            itemsIndexed(state.episodes) { index, title ->
+            itemsIndexed(state.episodes, key = { index, _ -> index }) { index, title ->
                 EpisodeChip(
                     title = title,
                     selected = index == state.episodeIndex,
@@ -1334,7 +1334,7 @@ private fun EpisodeSheet(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    itemsIndexed(episodes) { index, title ->
+                    itemsIndexed(episodes, key = { index, _ -> index }) { index, title ->
                         EpisodeChip(
                             title = title,
                             selected = index == episodeIndex,

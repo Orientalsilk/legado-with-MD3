@@ -1256,7 +1256,7 @@ fun ThemeColorSelector(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
-        items(themes) { (label, value) ->
+        items(themes, key = { it.second }) { (label, value) ->
             ThemeColorButton(
                 context = context,
                 label = label,

@@ -51,7 +51,7 @@ fun CrashLogSheet(
                 modifier = Modifier.fillMaxWidth(),
                 contentPadding = PaddingValues(bottom = 16.dp)
             ) {
-                items(logFiles) { fileDoc ->
+                items(logFiles, key = { it.name }) { fileDoc ->
                     AppText(
                         text = fileDoc.name,
                         style = LegadoTheme.typography.bodyMedium,

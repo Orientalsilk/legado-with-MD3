@@ -825,12 +825,16 @@ class ExportBookService : BaseService(), KoinComponent {
                 ) { _, _ ->
                     // 将章节写入内存时更新进度条
                     postEvent(EventBus.EXPORT_BOOK, book.bookUrl)
-                    progressBar += book.totalChapterNum.toDouble() / scope.size / 2
+                    if (scope.isNotEmpty()) {
+                        progressBar += book.totalChapterNum.toDouble() / scope.size / 2
+                    }
                     exportProgress[book.bookUrl] = progressBar.toInt()
                 }
                 save2Drive(filename, epubBook, fileDoc) { total, _ ->
                     //写入硬盘时更新进度条
-                    progressBar += book.totalChapterNum.toDouble() / epubList.size / total / 2
+                    if (epubList.isNotEmpty() && total > 0) {
+                        progressBar += book.totalChapterNum.toDouble() / epubList.size / total / 2
+                    }
                     postEvent(EventBus.EXPORT_BOOK, book.bookUrl)
                     exportProgress[book.bookUrl] = progressBar.toInt()
                 }

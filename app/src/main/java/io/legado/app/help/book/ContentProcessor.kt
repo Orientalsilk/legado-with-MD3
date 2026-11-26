@@ -1,6 +1,7 @@
 package io.legado.app.help.book
 
 import android.os.Build
+import android.util.LruCache
 import io.legado.app.constant.AppLog
 import io.legado.app.constant.AppPattern.spaceRegex
 import io.legado.app.data.appDb
@@ -33,6 +34,19 @@ import java.lang.ref.WeakReference
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+
+private val titleRegexCache = LruCache<String, Regex>(16)
+
+private fun getCachedTitleRegex(pattern: String): Regex {
+    synchronized(titleRegexCache) {
+        titleRegexCache.get(pattern)?.let { return it }
+    }
+    val compiled = Regex(pattern)
+    synchronized(titleRegexCache) {
+        titleRegexCache.put(pattern, compiled)
+    }
+    return compiled
+}
 
 class ContentProcessor private constructor(
     private val bookName: String,
@@ -229,7 +243,7 @@ class ContentProcessor private constructor(
             if (!removeSameTitleCache.contains(fileName)) try {
                 val name = Regex.escape(book.name)
                 var title = chapter.title.escapeRegex().replace(spaceRegex, "\\\\s*")
-                var match = Regex("^(\\s|\\p{P}|${name})*${title}(\\s)*")
+                var match = getCachedTitleRegex("^(\\s|\\p{P}|${name})*${title}(\\s)*")
                     .find(mContent)
                 if (match != null) {
                     removeTitle(match.range.last + 1)
@@ -242,7 +256,7 @@ class ContentProcessor private constructor(
                             chineseConverterType = settings.chineseConverterType,
                         )
                     )
-                    match = Regex("^(\\s|\\p{P}|${name})*${title}(\\s)*")
+                    match = getCachedTitleRegex("^(\\s|\\p{P}|${name})*${title}(\\s)*")
                         .find(mContent)
                     if (match != null) {
                         removeTitle(match.range.last + 1)

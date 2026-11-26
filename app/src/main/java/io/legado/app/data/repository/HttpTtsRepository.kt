@@ -84,7 +84,7 @@ class HttpTtsRepository(
             importWithCatalogs(entries)
             val restoredIds = entries.mapTo(mutableSetOf()) { it.first.id.toString() }
             if (voices != null) {
-                restoredIds.forEach { database.readAloudVoiceDao.deleteHttpVoices(it) }
+                restoredIds.chunked(500).forEach { database.readAloudVoiceDao.deleteHttpVoicesByIds(it.toSet()) }
                 database.readAloudVoiceDao.upsertVoices(voices.filter {
                     it.engineType == ReadAloudVoice.ENGINE_HTTP && it.engineId in restoredIds
                 })
@@ -95,7 +95,7 @@ class HttpTtsRepository(
 
     suspend fun delete(vararg sources: HttpTTS) = withContext(Dispatchers.IO) {
         database.withTransaction {
-            sources.forEach { database.readAloudVoiceDao.deleteHttpVoices(it.id.toString()) }
+            sources.map { it.id.toString() }.chunked(500).forEach { database.readAloudVoiceDao.deleteHttpVoicesByIds(it.toSet()) }
             dao.delete(*sources)
         }
     }

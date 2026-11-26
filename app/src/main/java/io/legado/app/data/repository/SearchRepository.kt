@@ -98,8 +98,8 @@ class SearchRepositoryImpl(
             val selectedSources = linkedSetOf<BookSourcePart>()
             when {
                 scope.isAll -> selectedSources.addAll(appDb.bookSourceDao.allEnabledPart)
-                scope.isSource -> scope.sourceUrls.forEach { sourceUrl ->
-                    appDb.bookSourceDao.getBookSourcePart(sourceUrl)?.let { selectedSources.add(it) }
+                scope.isSource -> scope.sourceUrls.chunked(500).forEach { chunk ->
+                    selectedSources.addAll(appDb.bookSourceDao.getBookSourceParts(chunk.toSet()))
                 }
 
                 else -> scope.groupNames.forEach { groupName ->

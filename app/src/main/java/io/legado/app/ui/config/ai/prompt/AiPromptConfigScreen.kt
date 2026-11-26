@@ -2,6 +2,8 @@ package io.legado.app.ui.config.ai.prompt
 
 import io.legado.app.feature.settings.search.SearchableSetting
 import io.legado.app.feature.settings.search.SearchableSettingsList
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -13,7 +15,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import io.legado.app.domain.model.AiTaskType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
@@ -149,16 +153,33 @@ fun AiPromptConfigScreen(
                 dismissText = stringResource(R.string.cancel),
                 onDismiss = { onIntent(AiPromptConfigIntent.CloseDialog) },
                 content = {
-                    AppTextField(
-                        value = dialog.currentPrompt,
-                        onValueChange = { onIntent(AiPromptConfigIntent.UpdateDialogPrompt(it)) },
-                        singleLine = false,
-                        maxLines = 15,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 200.dp, max = 400.dp)
-                            .imePadding()
-                    )
+                    val formatHintRes = when (dialog.taskType) {
+                        AiTaskType.TRANSLATE_CHAPTER -> R.string.ai_prompt_format_hint_translate
+                        AiTaskType.CLEAN_SELECTION,
+                        AiTaskType.ANALYZE_SPEECH,
+                        AiTaskType.IDENTIFY_CHARACTERS,
+                        AiTaskType.BOOKSHELF_AUTO_GROUP -> R.string.ai_prompt_format_hint_json
+                        else -> null
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        AppTextField(
+                            value = dialog.currentPrompt,
+                            onValueChange = { onIntent(AiPromptConfigIntent.UpdateDialogPrompt(it)) },
+                            singleLine = false,
+                            maxLines = 15,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 200.dp, max = 360.dp)
+                                .imePadding()
+                        )
+                        if (formatHintRes != null) {
+                            Text(
+                                text = stringResource(formatHintRes),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
             )
         }

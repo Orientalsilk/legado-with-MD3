@@ -31,15 +31,32 @@ by appCtx.getSharedPreferences("local", Context.MODE_PRIVATE) {
     private val localPreferencesRepository: SettingsRepository
         by lazy { get(SettingsRepository::class.java) }
 
+    @Volatile
+    private var passwordLoaded = false
+    @Volatile
+    private var cachedPassword: String? = null
+    @Volatile
+    private var cachedLastBackup: Long = -1L
+    @Volatile
+    private var cachedPrivacyPolicyOk: Boolean? = null
+
     /**
      * 本地密码,用来对需要备份的敏感信息加密,如 webdav 配置等
      */
     var password: String?
-        get() = runBlocking {
-            localPreferencesRepository.getPreference(LocalPreferencesKeys.PASSWORD, "").first()
-                .ifEmpty { null }
+        get() {
+            if (passwordLoaded) return cachedPassword
+            return runBlocking {
+                localPreferencesRepository.getPreference(LocalPreferencesKeys.PASSWORD, "").first()
+                    .ifEmpty { null }
+            }.also {
+                cachedPassword = it
+                passwordLoaded = true
+            }
         }
         set(value) {
+            cachedPassword = value?.ifEmpty { null }
+            passwordLoaded = true
             runBlocking {
                 localPreferencesRepository.updatePreference(
                     LocalPreferencesKeys.PASSWORD, value ?: ""
@@ -48,21 +65,30 @@ by appCtx.getSharedPreferences("local", Context.MODE_PRIVATE) {
         }
 
     var lastBackup: Long
-        get() = runBlocking {
-            localPreferencesRepository.getPreference(LocalPreferencesKeys.LAST_BACKUP, 0L).first()
+        get() {
+            val cached = cachedLastBackup
+            if (cached >= 0L) return cached
+            return runBlocking {
+                localPreferencesRepository.getPreference(LocalPreferencesKeys.LAST_BACKUP, 0L).first()
+            }.also { cachedLastBackup = it }
         }
         set(value) {
+            cachedLastBackup = value
             runBlocking {
                 localPreferencesRepository.updatePreference(LocalPreferencesKeys.LAST_BACKUP, value)
             }
         }
 
     var privacyPolicyOk: Boolean
-        get() = runBlocking {
-            localPreferencesRepository.getPreference(LocalPreferencesKeys.PRIVACY_POLICY_OK, false)
-                .first()
+        get() {
+            cachedPrivacyPolicyOk?.let { return it }
+            return runBlocking {
+                localPreferencesRepository.getPreference(LocalPreferencesKeys.PRIVACY_POLICY_OK, false)
+                    .first()
+            }.also { cachedPrivacyPolicyOk = it }
         }
         set(value) {
+            cachedPrivacyPolicyOk = value
             runBlocking {
                 localPreferencesRepository.updatePreference(
                     LocalPreferencesKeys.PRIVACY_POLICY_OK, value

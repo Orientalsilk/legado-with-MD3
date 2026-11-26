@@ -593,7 +593,7 @@ private fun PathNavigationBar(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                itemsIndexed(pathNames) { index, name ->
+                itemsIndexed(pathNames, key = { index, name -> "${index}_$name" }) { index, name ->
                     val isLast = index == pathNames.lastIndex
 
                     AppText(
