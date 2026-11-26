@@ -71,6 +71,7 @@ import io.legado.app.utils.openInputStream
 import io.legado.app.utils.toastOnUi
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.Dispatchers.Main
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.koin.core.component.KoinComponent
@@ -403,6 +404,7 @@ object Restore : KoinComponent {
                     applyConfigMap(map, aes)
                 }
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 AppLog.put("恢复配置 XML 出错\n${e.localizedMessage}", e)
             }
         }

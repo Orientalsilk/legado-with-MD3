@@ -3,6 +3,7 @@
 package io.legado.app.help.book
 
 import android.net.Uri
+import android.util.LruCache
 import androidx.core.net.toUri
 import com.script.buildScriptBindings
 import com.script.rhino.RhinoScriptEngine
@@ -422,11 +423,7 @@ fun parseHighlightedTags(
     }
 
     val compiledRules = rules.sortedBy { it.order }.mapNotNull { rule ->
-        val regex = try {
-            Regex(rule.pattern)
-        } catch (_: Exception) {
-            return@mapNotNull null
-        }
+        val regex = getCachedBookRuleRegex(rule.pattern) ?: return@mapNotNull null
         rule to regex
     }
     if (compiledRules.isEmpty()) {
@@ -462,6 +459,23 @@ fun parseHighlightedTags(
     return highlighted to regular
 }
 
+private val bookRuleRegexCache = LruCache<String, Regex>(64)
+
+private fun getCachedBookRuleRegex(pattern: String): Regex? {
+    synchronized(bookRuleRegexCache) {
+        bookRuleRegexCache.get(pattern)?.let { return it }
+    }
+    val compiled = try {
+        Regex(pattern)
+    } catch (_: Exception) {
+        return null
+    }
+    synchronized(bookRuleRegexCache) {
+        bookRuleRegexCache.put(pattern, compiled)
+    }
+    return compiled
+}
+
 fun applyTagGroupRules(
     books: List<Book>,
     rules: List<TagGroupRule>,
@@ -485,11 +499,7 @@ fun applyTagGroupRules(
     if (rules.isEmpty()) return
 
     val compiledRules = rules.mapNotNull { rule ->
-        val regex = try {
-            Regex(rule.pattern)
-        } catch (_: Exception) {
-            return@mapNotNull null
-        }
+        val regex = getCachedBookRuleRegex(rule.pattern) ?: return@mapNotNull null
         rule to regex
     }
     if (compiledRules.isEmpty()) return
@@ -544,7 +554,7 @@ fun applyTagGroupRulesForBook(book: Book) {
     if (rules.isEmpty()) return
 
     val compiledRules = rules.mapNotNull { rule ->
-        val regex = try { Regex(rule.pattern) } catch (_: Exception) { return@mapNotNull null }
+        val regex = getCachedBookRuleRegex(rule.pattern) ?: return@mapNotNull null
         rule to regex
     }
     if (compiledRules.isEmpty()) return

@@ -16,7 +16,7 @@ import androidx.compose.foundation.text.appendInlineContent
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -184,7 +184,7 @@ private fun HtmlTextRun(
         // The trailing JSON is a Legado image option, not part of the URL.
         // Passing the raw value to Coil makes otherwise valid book-source images fail to load.
         val painter = rememberAsyncImagePainter(model = imageModel(inline.loadSource))
-        val painterState by painter.state.collectAsState()
+        val painterState by painter.state.collectAsStateWithLifecycle()
         val image = (painterState as? AsyncImagePainter.State.Success)?.result?.image
         val drawableWidth = image?.width?.coerceAtLeast(1) ?: 1
         val drawableHeight = image?.height?.coerceAtLeast(1) ?: 1

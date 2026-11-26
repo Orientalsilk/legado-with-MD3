@@ -777,6 +777,10 @@ private fun RecentChatsDrawer(
     )
 }
 
+private val aiChatShortDateFormat = ThreadLocal.withInitial {
+    SimpleDateFormat("MM/dd", Locale.getDefault())
+}
+
 private fun formatRelativeTime(timestamp: Long): String {
     val now = System.currentTimeMillis()
     val diff = now - timestamp
@@ -789,10 +793,7 @@ private fun formatRelativeTime(timestamp: Long): String {
         hours < 24 -> "${hours}小时前"
         days < 7 -> "${days}天前"
         days < 30 -> "${days / 7}周前"
-        else -> {
-            val sdf = SimpleDateFormat("MM/dd", Locale.getDefault())
-            sdf.format(Date(timestamp))
-        }
+        else -> aiChatShortDateFormat.get()!!.format(Date(timestamp))
     }
 }
 

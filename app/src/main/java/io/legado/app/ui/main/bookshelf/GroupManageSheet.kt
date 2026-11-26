@@ -26,7 +26,7 @@ import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -84,7 +84,7 @@ fun GroupManageSheet(
     tagGroupRuleViewModel: TagGroupRuleViewModel = koinViewModel()
 ) {
     val context = LocalContext.current
-    val groups by bookshelfViewModel.allGroupsFlow.collectAsState()
+    val groups by bookshelfViewModel.allGroupsFlow.collectAsStateWithLifecycle()
 
     var editingGroup by remember { mutableStateOf<BookGroup?>(null) }
     var isEditing by remember { mutableStateOf(false) }

@@ -1,33 +1,16 @@
-# Legado-with-MD3 Bug 修复与性能优化说明
+# Legado-with-MD3 Bug 修复、性能优化与 AI 提示词优化说明（共 26 个文件）
 
-## 一、Bug 修复（6 项）
-1. **日期天数计算错误** (`app/src/main/java/io/legado/app/utils/StringUtils.kt`)
-   - 修复 `dateConvert` 中 `val difDate = difHour / 60` 的错误（1 天为 24 小时而非 60 小时，原代码导致 24~59 小时前的内容被误判为“今天”），改为 `difHour / HOUR_OF_DAY`。
-   - 同步为 `SimpleDateFormat` 增加基于 `ConcurrentHashMap + ThreadLocal` 的线程安全缓存，避免并发问题及重复分配开销。
-2. **随机封面缓存并发竞争与内存泄漏** (`app/src/main/java/io/legado/app/model/BookCover.kt`)
-   - 将无界且非线程安全的 `mutableMapOf<String, Drawable>()` 替换为有界 `LruCache<String, Drawable>(32)` 并加 `synchronized` 保护，防止多线程 `ConcurrentModificationException` 及封面图无限驻留内存。
-3. **Web 服务控制器并发竞态与非线程安全缓存** (`app/src/main/java/io/legado/app/api/controller/BookController.kt`)
-   - 移除 `object BookController` 上被多线程共享修改的 `book`、`bookSource`、`bookUrl` 可变字段，改为 `getImg` 局部变量，消除并发请求不同书籍图片时的数据覆盖竞态。
-   - 使用 `Collections.synchronizedMap(WeakHashMap())` 并加锁保护 `defaultCoverCache`。
-4. **阅读核心协程取消异常被吞没** (`app/src/main/java/io/legado/app/model/ReadBook.kt`)
-   - 在 `commitSessionInternal`、`saveSessionToDb` 与 `download` 的 `catch (e: Exception)` 中补充 `if (e is CancellationException) throw e`，保证切章或退出阅读时协程能正常取消，不再误报 `"加载正文出错 Job was cancelled"`。
-5. **日志格式化器并发不安全与高频对象分配** (`app/src/main/java/io/legado/app/utils/LogUtils.kt`)
-   - 将共享 `SimpleDateFormat` 改造为 `ThreadLocal` 缓存，修复多线程写日志时 `SimpleDateFormat` 线程安全隐患并消除每行日志重复创建格式化器的开销。
-6. **ZIP 文件句柄潜在泄漏** (`app/src/main/java/io/legado/app/utils/compress/ZipUtils.kt`)
-   - `getFilesPath` 改用 `ZipFile(zipFile).use { ... }`，确保遍历异常时仍能可靠释放文件描述符。
+## 一、自查收口与新增 Bug 修复
+* `AnalyzeByRegex.kt`：为 `regexCache` 的 `get`/`put` 增加 `synchronized` 锁，消除首次并发编译竞态。
+* `StringUtils.kt` & `LogUtils.kt`：将无界 `ConcurrentHashMap<String, ThreadLocal<SimpleDateFormat>>` 替换为有界 `LruCache`（容量 32 / 16），防止非常规动态格式字符串无限驻留内存。
+* `BackstageWebView.kt`：`destroy()` 中补充 `mHandler.removeCallbacksAndMessages(null)`，防止 WebView 销毁后延迟的 `EvalJsRunnable` 继续触发回调或持有引用。
 
-## 二、性能优化（5 项）
-1. **章节重排正则预编译** (`app/src/main/java/io/legado/app/help/book/ContentHelp.kt`)
-   - 将 `reSegmentMapped` 中每次调用（含段落 `for` 循环内）重复编译的 14 个 `Regex` 提升为 `object ContentHelp` 的静态常量，并将 `split("\n".toRegex())` 替换为无正则开销的 `split('\n')`。
-2. **EPUB/本地 HTML CSS 解析正则预编译** (`app/src/main/java/io/legado/app/model/localBook/LocalBookSemanticHtml.kt`)
-   - 将 `parseCssRules` 与 `parseSimpleSelector` 中的 6 个高频 `Regex` 提升为静态常量。
-3. **书源正则规则缓存与单次扫描** (`app/src/main/java/io/legado/app/model/analyzeRule/AnalyzeByRegex.kt`)
-   - 为 `Regex` 增加 `LruCache<String, Regex>(64)` 缓存；重构 `getElements` 消除先 `find` 再 `findAll` 的双重全文扫描。
-4. **正文搜索结果列表项 Key 优化** (`app/src/main/java/io/legado/app/ui/book/searchContent/SearchContentScreen.kt`)
-   - 为 `FastScrollLazyColumn` 的 `itemsIndexed` 补充稳定唯一 `key`，减少滚动与增量更新时的 Compose 重组。
-5. **换源目录弹窗列表 Key 与越界保护** (`app/src/main/java/io/legado/app/ui/book/read/sheet/ChangeChapterSourceSheet.kt`)
-   - 为 `LazyColumn` 的 `itemsIndexed` 补充唯一 `key`，并在 `scrollToItem` 前校验 `state.currentTocIndex in state.tocItems.indices`。
+## 二、AI 设置默认提示词优化（`values-zh-rCN/strings.xml` & `values/strings.xml`）
+1. **对话 (`ai_prompt_default_chat`)**：从空泛的“有帮助的 AI 助手”细化为“严谨、简洁的小说阅读与通用助手”，约束优先依据提供上下文、不捏造未提及情节。
+2. **章节翻译 (`ai_prompt_default_translate`)**：修正“仅输出翻译结果”与词典映射格式之间的轻微冲突，明确保留空行/段落结构，并补充防提示词注入约束（将小说原文严格视为数据）。
+3. **章节总结 (`ai_prompt_default_summary`)**：补充防剧透、条理化输出及防正文提示词注入约束。
+4. **多角色朗读分析 (`ai_prompt_default_analyze_speech`)**：明确“每个字与标点不增删、不改写”，降低模型擅自改写标点导致对齐失败的概率。
+5. **人物识别 (`ai_prompt_default_identify_characters`)**：修复 `role` 枚举末尾悬空竖线（`female_supporting|` → `female_supporting|""`），避免模型对空值合法性产生歧义。
 
-## 三、验证说明
-- 已在本地完成 11 个修改文件的源码核对与行数/结构校验。
-- 因当前沙箱环境无网络及 Android SDK / Gradle 缓存，尚未在本地执行 `./gradlew :app:compileAppCoreDebugKotlin` 与单元测试；请解压覆盖至仓库根目录后运行 Gradle 构建验证。
+## 三、前两轮已包含的核心修复与优化（23 个文件）
+* 详见前两轮清单（`StringUtils` 天数计算 Bug、`BookCover` 缓存泄漏、`BookController` 并发竞态、`ReadBook`/`Restore` 协程取消异常、`ZipUtils` 句柄泄漏、`ContentHelp`/`LocalBookSemanticHtml`/`BookExtensions`/`TitleStyleParser` 正则缓存、`BookDomainRepositoryImpl`/`BookshelfAutoGroupRepository` 批量查询、Compose `key` 与 `collectAsStateWithLifecycle()` 迁移等）。

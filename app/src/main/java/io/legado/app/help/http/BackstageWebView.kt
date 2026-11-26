@@ -156,6 +156,7 @@ class BackstageWebView(
     }
 
     private fun destroy() {
+        mHandler.removeCallbacksAndMessages(null)
         mWebView?.destroy()
         mWebView = null
     }

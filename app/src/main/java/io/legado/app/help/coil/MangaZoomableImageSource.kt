@@ -5,7 +5,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.RememberObserver
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.key
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.geometry.Size
 import coil3.ImageLoader
@@ -26,7 +26,7 @@ fun rememberMangaZoomableImageSource(
     owner: MangaImageFileOwner,
     wholeImage: Boolean,
 ): ZoomableImageSource {
-    val failed by owner.regionDecodeFailed.collectAsState()
+    val failed by owner.regionDecodeFailed.collectAsStateWithLifecycle()
     val usePainter = wholeImage || failed
     return key(owner, usePainter) {
         val delegate = if (usePainter) {

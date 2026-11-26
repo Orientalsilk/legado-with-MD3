@@ -8,7 +8,7 @@ import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.text.DecimalFormat
 import java.text.SimpleDateFormat
-import java.util.concurrent.ConcurrentHashMap
+import android.util.LruCache
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
@@ -32,12 +32,14 @@ object StringUtils {
     private val numericRegex = Regex("-?[0-9]+")
     private val unicodeRegex = Regex("\\\\u(\\p{XDigit}{4})")
 
-    private val dateFormatCache = ConcurrentHashMap<String, ThreadLocal<SimpleDateFormat>>()
+    private val dateFormatCache = LruCache<String, ThreadLocal<SimpleDateFormat>>(32)
 
     private fun getCachedDateFormat(pattern: String, locale: Locale = Locale.getDefault()): SimpleDateFormat {
         val key = "${pattern}_${locale.toLanguageTag()}"
-        val holder = dateFormatCache.getOrPut(key) {
-            ThreadLocal.withInitial { SimpleDateFormat(pattern, locale) }
+        val holder = synchronized(dateFormatCache) {
+            dateFormatCache.get(key) ?: ThreadLocal.withInitial { SimpleDateFormat(pattern, locale) }.also {
+                dateFormatCache.put(key, it)
+            }
         }
         return holder.get()!!
     }

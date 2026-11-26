@@ -23,6 +23,7 @@ class BookshelfAutoGroupRepository(
     override suspend fun loadSource(): BookshelfAutoGroupSource = withContext(Dispatchers.IO) {
         val groupDao = database.bookGroupDao
         val allGroups = groupDao.all
+        val positiveGroups = allGroups.filter { it.groupId > 0L }
         val publicGroups = allGroups.filter { it.isUserGroup() && !it.isPrivate }
         val privateGroupMask = allGroups
             .asSequence()
@@ -41,7 +42,7 @@ class BookshelfAutoGroupRepository(
                     author = book.author,
                     intro = book.groupingIntro(),
                     kind = book.customTag ?: book.kind.orEmpty(),
-                    currentGroupNames = groupDao.getGroupNames(book.group),
+                    currentGroupNames = positiveGroups.filter { (it.groupId and book.group) > 0L }.map { it.groupName },
                 )
             },
             existingGroupNames = publicGroups
@@ -74,10 +75,16 @@ class BookshelfAutoGroupRepository(
             var reusedGroupCount = 0
             var skippedBookCount = 0
 
+            // Batch-fetch current rows before creating groups to avoid N+1 SQL queries.
+            val plannedUrls = plan.groups.asSequence().flatMap { it.books }.map { it.bookUrl }.toSet()
+            val booksByUrl = plannedUrls.chunked(500)
+                .flatMap { chunk -> bookDao.getBooksByUrls(chunk.toSet()) }
+                .associateBy(Book::bookUrl)
+
             // Resolve current rows before creating groups so stale plans cannot create empty groups.
             val applicableGroups = plan.groups.mapNotNull { group ->
                 val books = group.books.mapNotNull { plannedBook ->
-                    val entity = bookDao.getBook(plannedBook.bookUrl)
+                    val entity = booksByUrl[plannedBook.bookUrl]
                     // Re-check membership because the user may have grouped the book after analysis.
                     val shouldSkip = entity == null || (
                         options.incrementalOnly && entity.group and publicGroupMask != 0L

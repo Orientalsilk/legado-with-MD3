@@ -15,7 +15,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -71,7 +71,7 @@ fun ReaderAudioDownloadSheet(
     val chapterCount = (book?.totalChapterNum ?: 0).coerceAtLeast(1)
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val progress by ReadAloudAudioStore.progress.collectAsState()
+    val progress by ReadAloudAudioStore.progress.collectAsStateWithLifecycle()
     val running = progress.running
     // 当前章每次重组重读：弹层常挂在阅读界面上，存快照会把章号钉在进阅读器那一章
     val currentChapterIndex = ReadBook.durChapterIndex

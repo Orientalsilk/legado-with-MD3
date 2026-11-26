@@ -9,7 +9,14 @@ object AnalyzeByRegex {
     private val regexCache = LruCache<String, Regex>(64)
 
     private fun getCachedRegex(pattern: String): Regex {
-        return regexCache.get(pattern) ?: Regex(pattern).also { regexCache.put(pattern, it) }
+        synchronized(regexCache) {
+            regexCache.get(pattern)?.let { return it }
+        }
+        val compiled = Regex(pattern)
+        synchronized(regexCache) {
+            regexCache.put(pattern, compiled)
+        }
+        return compiled
     }
 
     fun getElement(res: String, regs: Array<String>, index: Int = 0): List<String>? {

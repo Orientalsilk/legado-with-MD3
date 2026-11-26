@@ -16,7 +16,9 @@ class BookDomainRepositoryImpl(
 
     private suspend fun getBooks(bookUrls: Set<String>): List<Book> {
         if (bookUrls.isEmpty()) return emptyList()
-        return bookUrls.mapNotNull { bookDao.getBook(it) }
+        return bookUrls.chunked(500).flatMap { chunk ->
+            bookDao.getBooksByUrls(chunk.toSet())
+        }
     }
 
     override suspend fun getCacheableBooks(bookUrls: Set<String>): List<CacheableBook> {

@@ -75,7 +75,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.legado.app.R
 import io.legado.app.data.entities.Book
 import io.legado.app.data.entities.BookSource
@@ -279,7 +279,7 @@ private fun ReaderBookSheet(
         // 这里的 content 在 Miuix 玻璃 sheet 下由 root dialog host 的另一个 composition
         // 执行。订阅必须发生在消费侧：上游只传稳定的 StateFlow 引用，StateFlow 的值变化
         // 直接 invalidate 本 composition 的作用域，不依赖 content lambda 是否被重建。
-        val rawState by screenStateFlow.collectAsState()
+        val rawState by screenStateFlow.collectAsStateWithLifecycle()
         val state = remember(rawState, hostBook) {
             if (hostBook != null && rawState.book == null) {
                 rawState.copy(book = hostBook)

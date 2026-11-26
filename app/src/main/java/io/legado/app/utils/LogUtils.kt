@@ -16,7 +16,7 @@ import splitties.init.appCtx
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.ConcurrentHashMap
+import android.util.LruCache
 import java.util.logging.FileHandler
 import java.util.logging.Level
 import java.util.logging.LogRecord
@@ -27,11 +27,13 @@ import kotlin.time.Duration.Companion.days
 @Suppress("unused")
 object LogUtils {
     const val TIME_PATTERN = "yy-MM-dd HH:mm:ss.SSS"
-    private val dateFormatCache = ConcurrentHashMap<String, ThreadLocal<SimpleDateFormat>>()
+    private val dateFormatCache = LruCache<String, ThreadLocal<SimpleDateFormat>>(16)
 
     private fun getThreadLocalFormat(pattern: String): SimpleDateFormat {
-        val holder = dateFormatCache.getOrPut(pattern) {
-            ThreadLocal.withInitial { SimpleDateFormat(pattern, Locale.getDefault()) }
+        val holder = synchronized(dateFormatCache) {
+            dateFormatCache.get(pattern) ?: ThreadLocal.withInitial { SimpleDateFormat(pattern, Locale.getDefault()) }.also {
+                dateFormatCache.put(pattern, it)
+            }
         }
         return holder.get()!!
     }

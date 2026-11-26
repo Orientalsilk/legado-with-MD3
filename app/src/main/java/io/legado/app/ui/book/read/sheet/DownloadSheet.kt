@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,7 +101,7 @@ fun DownloadSheet(
     val rangePreview = preview?.takeIf {
         it.bookUrl == book.bookUrl && it.start == startIndex && it.end == endIndex
     }
-    val downloadState by CacheBook.downloadStateFlow.collectAsState()
+    val downloadState by CacheBook.downloadStateFlow.collectAsStateWithLifecycle()
     val bookTaskState = downloadState.books[book.bookUrl]
 
     AppAlertDialog(

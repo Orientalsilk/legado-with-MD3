@@ -1,8 +1,22 @@
 package io.legado.app.ui.book.read.page.provider
 
+import android.util.LruCache
 import io.legado.app.ui.book.read.page.entities.TitleSegment
 
 object TitleStyleParser {
+
+    private val regexCache = LruCache<String, Regex>(32)
+
+    private fun getCachedRegex(pattern: String): Regex {
+        synchronized(regexCache) {
+            regexCache.get(pattern)?.let { return it }
+        }
+        val compiled = Regex(pattern)
+        synchronized(regexCache) {
+            regexCache.put(pattern, compiled)
+        }
+        return compiled
+    }
     fun getSegments(
         rawTitle: String,
         segType: Int,
@@ -25,11 +39,11 @@ object TitleStyleParser {
                     listOf(rawTitle)
                 } else {
                     val regex = if (segType == 3) {
-                        Regex("(?<=$segFlag)")
+                        getCachedRegex("(?<=$segFlag)")
                     } else {
                         val flags = segFlag.split(",").map { it.trim() }.filter { it.isNotEmpty() }
                         val pattern = flags.joinToString("|") { Regex.escape(it) }
-                        Regex("(?<=$pattern)")
+                        getCachedRegex("(?<=$pattern)")
                     }
 
                     rawTitle.split(regex)
