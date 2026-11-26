@@ -79,7 +79,7 @@ class ReadAloudVoiceRepository(
     }
 }
 
-internal fun ReadAloudVoiceEntity.toDomain() = ReadAloudVoice(
+fun ReadAloudVoiceEntity.toDomain() = ReadAloudVoice(
     id = id,
     engineType = engineType,
     engineId = engineId,

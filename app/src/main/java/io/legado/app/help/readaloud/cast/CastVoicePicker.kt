@@ -3,6 +3,8 @@ package io.legado.app.help.readaloud.cast
 import io.legado.app.data.appDb
 import io.legado.app.data.entities.BookVoiceBindingEntity
 import io.legado.app.data.entities.CastCharacter
+import io.legado.app.data.repository.toDomain
+import io.legado.app.domain.model.readaloud.ReadAloudVoice
 import io.legado.app.domain.model.readaloud.BookVoiceBinding
 import io.legado.app.ui.config.readConfig.ReadConfig
 
@@ -33,6 +35,47 @@ object CastVoicePicker {
         appDb.castCharacterDao.update(updated)
         syncBinding(updated, force = stale)
         return updated
+    }
+
+    /**
+     * 运行时云端音色不可用时，从同一声音池 [CastCharacter.poolLabel] 中挑选一个未失败的启用音色替换，
+     * 并同步更新角色表与书内绑定表。
+     */
+    suspend fun replaceUnavailableCloudVoice(
+        bookUrl: String,
+        characterId: String,
+        failedVoiceIds: Set<String>,
+    ): ReadAloudVoice? {
+        if (bookUrl.isBlank() || characterId.isBlank()) return null
+        val character = appDb.castCharacterDao.getById(characterId) ?: return null
+        if (character.poolLabel.isBlank()) return null
+        val poolVoices = VoicePoolStore.enabledVoiceIdsOfPool(character.poolLabel)
+            .filterNot { it in failedVoiceIds || it == character.voiceId }
+        if (poolVoices.isEmpty()) return null
+        val usage = appDb.castCharacterDao.getByBook(bookUrl)
+            .filter { it.id != character.id && it.voiceId.isNotBlank() }
+            .groupingBy { it.voiceId }
+            .eachCount()
+        val candidates = leastUsedVoices(poolVoices, usage).shuffled()
+        for (candidateId in candidates) {
+            val entity = appDb.readAloudVoiceDao.getVoice(candidateId) ?: continue
+            val now = System.currentTimeMillis()
+            val updated = character.copy(voiceId = candidateId, updatedAt = now)
+            appDb.castCharacterDao.update(updated)
+            syncBinding(updated, force = true)
+            val directBinding = appDb.readAloudVoiceDao.getBinding(
+                bookUrl,
+                BookVoiceBinding.SUBJECT_CHARACTER,
+                character.id,
+            )
+            if (directBinding != null && directBinding.voiceId != candidateId) {
+                appDb.readAloudVoiceDao.upsertBinding(
+                    directBinding.copy(voiceId = candidateId, updatedAt = now)
+                )
+            }
+            return entity.toDomain()
+        }
+        return null
     }
 
     /** 池内启用音色里本书用得最少的那一批（[poolVoices] 非空）；调用方在这一批里随机取。 */

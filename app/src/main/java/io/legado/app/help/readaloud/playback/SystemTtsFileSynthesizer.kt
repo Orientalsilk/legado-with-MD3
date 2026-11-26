@@ -38,6 +38,12 @@ class SystemTtsFileSynthesizer(
     private var activeEngine = ""
     private var voiceCatalog: Set<Voice>? = null
 
+    suspend fun isNetworkVoice(engine: String, voiceName: String): Boolean = mutex.withLock {
+        if (voiceName.isBlank()) return@withLock false
+        val instance = ensureEngine(engine) ?: return@withLock false
+        catalog(instance).firstOrNull { it.name == voiceName }?.isNetworkConnectionRequired == true
+    }
+
     suspend fun synthesize(
         engine: String,
         voiceName: String,

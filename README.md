@@ -75,6 +75,7 @@ Design 3 风格重构版本。
   * **多角色朗读分析 (`ai_prompt_default_analyze_speech`)**：明确每个字与标点不增删、不改写，降低对齐失败率。
   * **人物识别 (`ai_prompt_default_identify_characters`)**：修复 `role` 枚举末尾悬空竖线（`female_supporting|` → `female_supporting|""`）。
 * **提示词编辑防呆提示**（`AiPromptConfigScreen.kt`）：编辑翻译或 JSON 结构化任务提示词时，在输入框下方展示格式约束提示，降低误改导致解析失败的概率。
+* **云端角色音色失败同池自动替换**（`HttpReadAloudService.kt`、`CastVoicePicker.kt`、`SystemTtsFileSynthesizer.kt`）：多角色朗读期间若某个云端音色（含 Legado 云 TTS、HTTP TTS 及 MultiTTS 中 `isNetworkConnectionRequired = true` 的云音色）合成失败，自动从该角色所属声音池中挑选可用备选音色重试并同步更新绑定，离线音色则保持永不自动替换。
 
 ---
 

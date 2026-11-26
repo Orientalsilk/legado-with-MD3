@@ -48,6 +48,8 @@ import io.legado.app.domain.gateway.ReadAloudSettingsGateway
 import io.legado.app.domain.model.readaloud.ReadAloudPlaybackCursor
 import io.legado.app.domain.model.readaloud.ReadAloudPlaybackQueue
 import io.legado.app.domain.model.readaloud.ReadAloudVoice
+import io.legado.app.help.readaloud.cast.CastVoicePicker
+import java.util.concurrent.ConcurrentHashMap
 import io.legado.app.domain.model.readaloud.SpeechEngineRoute
 import io.legado.app.domain.model.readaloud.SpeechRoleType
 import io.legado.app.domain.model.readaloud.SpeechVoiceRouter
@@ -372,6 +374,8 @@ class HttpReadAloudService : BaseReadAloudService(),
     private var downloadErrorNo: Int = 0
     private var playErrorNo = 0
     private val downloadTaskActiveLock = Mutex()
+    private val sessionFailedCloudVoiceIds = ConcurrentHashMap.newKeySet<String>()
+    private val sessionReplacedVoices = ConcurrentHashMap<String, ReadAloudVoice>()
     private val systemTtsFileSynthesizer by lazy { SystemTtsFileSynthesizer(this) }
     private val cloudTtsAudioSynthesizer by lazy {
         CloudTtsAudioSynthesizer(get(CloudTtsEngineGateway::class.java))
@@ -1012,57 +1016,62 @@ class HttpReadAloudService : BaseReadAloudService(),
                             if (hasSpeakFile(fileName)) {
                                 true
                             } else {
-                                runCatching {
-                                    when (routedVoice.engineType) {
-                                        ReadAloudVoice.ENGINE_SYSTEM -> {
-                                            val config = runCatching {
-                                                GSON.fromJson(
-                                                    routedVoice.traitsJson,
-                                                    SystemTtsVoiceConfig::class.java,
-                                                )
-                                            }.getOrNull() ?: SystemTtsVoiceConfig()
-                                            // 全局语速走播放端变速, 系统合成只用音色自带语速, 避免叠加
-                                            val success = synthesizeSpeakFile(fileName) { output ->
-                                                systemTtsFileSynthesizer.synthesize(
-                                                    routedVoice.engineId,
-                                                    routedVoice.speakerId,
-                                                    speakText,
-                                                    output,
-                                                    config.speechRate ?: 1f,
-                                                    config.pitch ?: 1f,
-                                                )
-                                            }
-                                            if (!success) {
-                                                throw NoStackTraceException("系统引擎未返回当前句的音频")
-                                            }
-                                        }
-
-                                        ReadAloudVoice.ENGINE_CLOUD -> {
-                                            val success = synthesizeSpeakFile(fileName) { output ->
-                                                cloudTtsAudioSynthesizer.synthesize(
-                                                    routedVoice,
-                                                    speakText,
-                                                    output,
-                                                    styleOverride = cueEmotion,
+                                var currentVoice = routedVoice
+                                var attemptResult = runCatching {
+                                    synthesizeCueWithVoice(
+                                        voice = currentVoice,
+                                        fileName = fileName,
+                                        speakText = speakText,
+                                        defaultHttpTts = httpTts,
+                                        cueEmotion = cueEmotion,
+                                        characterPerformance = characterPerformance,
+                                        cueRoleType = cueRoleType,
+                                    )
+                                }
+                                if (attemptResult.isFailure) {
+                                    val firstError = attemptResult.exceptionOrNull()
+                                    if (firstError is CancellationException) throw firstError
+                                    val characterId = cue?.characterId
+                                    if (!bookUrl.isNullOrBlank() &&
+                                        !characterId.isNullOrBlank() &&
+                                        isReplaceableCloudVoice(currentVoice)
+                                    ) {
+                                        sessionFailedCloudVoiceIds.add(currentVoice.id)
+                                        for (retryIdx in 0 until 2) {
+                                            val replacement = CastVoicePicker.replaceUnavailableCloudVoice(
+                                                bookUrl = bookUrl,
+                                                characterId = characterId,
+                                                failedVoiceIds = sessionFailedCloudVoiceIds,
+                                            ) ?: break
+                                            currentVoice = replacement
+                                            attemptResult = runCatching {
+                                                synthesizeCueWithVoice(
+                                                    voice = currentVoice,
+                                                    fileName = fileName,
+                                                    speakText = speakText,
+                                                    defaultHttpTts = httpTts,
+                                                    cueEmotion = cueEmotion,
                                                     characterPerformance = characterPerformance,
-                                                    roleType = cueRoleType,
+                                                    cueRoleType = cueRoleType,
                                                 )
                                             }
-                                            if (!success) {
-                                                throw NoStackTraceException("云端引擎未返回当前句的音频")
+                                            if (attemptResult.isSuccess) {
+                                                sessionReplacedVoices[characterId] = currentVoice
+                                                AppLog.put("云端音色不可用，已自动切换为同池音色：${currentVoice.displayName}")
+                                                toastOnUi("角色音色不可用，已切换为：${currentVoice.displayName}")
+                                                break
                                             }
-                                        }
-
-                                        else -> {
-                                            val inputStream = getSpeakStream(
-                                                itemHttpTts, speakText, routedVoice, cueEmotion
-                                            ) ?: throw NoStackTraceException("HTTP 引擎未返回当前句的音频")
-                                            if (!createSpeakFile(fileName, inputStream)) {
-                                                throw NoStackTraceException("HTTP 引擎音频写入缓存失败")
+                                            val retryError = attemptResult.exceptionOrNull()
+                                            if (retryError is CancellationException) throw retryError
+                                            if (isReplaceableCloudVoice(currentVoice)) {
+                                                sessionFailedCloudVoiceIds.add(currentVoice.id)
+                                            } else {
+                                                break
                                             }
                                         }
                                     }
-                                }.onFailure {
+                                }
+                                attemptResult.onFailure {
                                     if (it is CancellationException) throw it
                                     withContext(Main) { failSynthesis(generation, it) }
                                 }.isSuccess
@@ -1709,7 +1718,8 @@ class HttpReadAloudService : BaseReadAloudService(),
         val text = position.remainingText
         val fullText = position.spoken.text
         val cue = playbackQueue.cues.getOrNull(index)
-        val downloadVoice = voiceForCue(playbackQueue, index, default)
+        val rawDownloadVoice = voiceForCue(playbackQueue, index, default)
+        val downloadVoice = cue?.characterId?.let { sessionReplacedVoices[it] } ?: rawDownloadVoice
         // 流式通常已经是 HTTP 路由，复用本次结果，避免在主线程重复查询音色和源表。
         val voice = if (stream && downloadVoice.engineType != ReadAloudVoice.ENGINE_HTTP) {
             httpVoiceForCue(index, default)
@@ -1808,6 +1818,78 @@ class HttpReadAloudService : BaseReadAloudService(),
             )
         } else routedVoice
         return httpTtsAudioCacheSourceKey(itemHttpTts, effectiveVoice, cueEmotion)
+    }
+
+    private suspend fun isReplaceableCloudVoice(voice: ReadAloudVoice): Boolean {
+        return when (voice.engineType) {
+            ReadAloudVoice.ENGINE_CLOUD, ReadAloudVoice.ENGINE_HTTP -> true
+            ReadAloudVoice.ENGINE_SYSTEM -> systemTtsFileSynthesizer.isNetworkVoice(
+                voice.engineId,
+                voice.speakerId,
+            )
+            else -> false
+        }
+    }
+
+    private suspend fun synthesizeCueWithVoice(
+        voice: ReadAloudVoice,
+        fileName: String,
+        speakText: String,
+        defaultHttpTts: HttpTTS,
+        cueEmotion: String,
+        characterPerformance: String?,
+        cueRoleType: SpeechRoleType,
+    ) {
+        when (voice.engineType) {
+            ReadAloudVoice.ENGINE_SYSTEM -> {
+                val config = runCatching {
+                    GSON.fromJson(
+                        voice.traitsJson,
+                        SystemTtsVoiceConfig::class.java,
+                    )
+                }.getOrNull() ?: SystemTtsVoiceConfig()
+                // 全局语速走播放端变速, 系统合成只用音色自带语速, 避免叠加
+                val success = synthesizeSpeakFile(fileName) { output ->
+                    systemTtsFileSynthesizer.synthesize(
+                        voice.engineId,
+                        voice.speakerId,
+                        speakText,
+                        output,
+                        config.speechRate ?: 1f,
+                        config.pitch ?: 1f,
+                    )
+                }
+                if (!success) {
+                    throw NoStackTraceException("系统引擎未返回当前句的音频")
+                }
+            }
+
+            ReadAloudVoice.ENGINE_CLOUD -> {
+                val success = synthesizeSpeakFile(fileName) { output ->
+                    cloudTtsAudioSynthesizer.synthesize(
+                        voice,
+                        speakText,
+                        output,
+                        styleOverride = cueEmotion,
+                        characterPerformance = characterPerformance,
+                        roleType = cueRoleType,
+                    )
+                }
+                if (!success) {
+                    throw NoStackTraceException("云端引擎未返回当前句的音频")
+                }
+            }
+
+            else -> {
+                val itemHttpTts = httpSourceForVoice(voice, defaultHttpTts)
+                val inputStream = getSpeakStream(
+                    itemHttpTts, speakText, voice, cueEmotion
+                ) ?: throw NoStackTraceException("HTTP 引擎未返回当前句的音频")
+                if (!createSpeakFile(fileName, inputStream)) {
+                    throw NoStackTraceException("HTTP 引擎音频写入缓存失败")
+                }
+            }
+        }
     }
 
     private fun httpSourceForVoice(voice: ReadAloudVoice, default: HttpTTS): HttpTTS {
