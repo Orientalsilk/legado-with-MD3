@@ -53,8 +53,11 @@ object CastVoicePicker {
     ): List<ReadAloudVoice> {
         if (bookUrl.isBlank() || characterId.isBlank()) return emptyList()
         val character = appDb.castCharacterDao.getById(characterId) ?: return emptyList()
-        if (character.poolLabel.isBlank()) return emptyList()
-        val poolVoices = VoicePoolStore.enabledVoiceIdsOfPool(character.poolLabel)
+        val poolLabel = character.poolLabel.ifBlank {
+            VoicePoolStore.voicePoolMap()[character.voiceId]?.firstOrNull().orEmpty()
+        }
+        if (poolLabel.isBlank()) return emptyList()
+        val poolVoices = VoicePoolStore.enabledVoiceIdsOfPool(poolLabel)
             .filterNot { it in failedVoiceIds || it == character.voiceId }
         if (poolVoices.isEmpty()) return emptyList()
         val usage = appDb.castCharacterDao.getByBook(bookUrl)
