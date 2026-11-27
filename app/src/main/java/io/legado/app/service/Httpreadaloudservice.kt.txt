@@ -1042,9 +1042,10 @@ class HttpReadAloudService : BaseReadAloudService(),
                             val firstError = attemptResult.exceptionOrNull()
                             if (firstError is CancellationException) throw firstError
                             val characterId = cue?.characterId
+                            val replaceable = isReplaceableCloudVoice(routedVoice)
                             if (!bookUrl.isNullOrBlank() &&
                                 !characterId.isNullOrBlank() &&
-                                isReplaceableCloudVoice(routedVoice)
+                                replaceable
                             ) {
                                 sessionFailedCloudVoiceIds.add(routedVoice.id)
                                 val candidates = CastVoicePicker.pickReplacementCloudVoices(
@@ -1052,6 +1053,12 @@ class HttpReadAloudService : BaseReadAloudService(),
                                     characterId = characterId,
                                     failedVoiceIds = sessionFailedCloudVoiceIds,
                                 ).take(2)
+                                if (candidates.isEmpty()) {
+                                    AppLog.put(
+                                        "同池音色替换跳过：未找到可用备选音色 " +
+                                            "(characterId=$characterId, failedVoice=${routedVoice.id})"
+                                    )
+                                }
                                 for (replacement in candidates) {
                                     val candidateSourceKey = sourceKeyForCue(replacement, cue, httpTts)
                                     val candidateHttpTts = httpSourceForVoice(replacement, httpTts)
@@ -1104,6 +1111,13 @@ class HttpReadAloudService : BaseReadAloudService(),
                                         break
                                     }
                                 }
+                            } else {
+                                AppLog.put(
+                                    "同池音色替换未触发：bookUrlEmpty=${bookUrl.isNullOrBlank()}, " +
+                                        "characterId=${characterId ?: "null"}, " +
+                                        "voice=${routedVoice.id}(${routedVoice.engineType}/${routedVoice.engineId}), " +
+                                        "replaceable=$replaceable"
+                                )
                             }
                             if (!synthesized) {
                                 attemptResult.onFailure {
